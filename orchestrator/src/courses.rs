@@ -145,7 +145,79 @@ CREATE TABLE IF NOT EXISTS user_metrics (
 );
 "#;
 
-// ─── Roadmap API (impl on ChatDb) ──────────────────────────────────────────
+// ─── Almanach Course Schema ──────────────────────────────────────────────
+
+pub const SCHEMA_COURSES: &str = r#"
+CREATE TABLE IF NOT EXISTS courses (
+    id              TEXT PRIMARY KEY,
+    code            TEXT UNIQUE NOT NULL,       -- e.g. "MTH1W"
+    title           TEXT NOT NULL,              -- French title (primary)
+    title_en        TEXT,                       -- English title
+    description     TEXT,
+    grade           TEXT,                       -- e.g. "9"
+    language        TEXT NOT NULL DEFAULT 'fr',
+    credit_hours    INTEGER,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_courses_code ON courses(code);
+
+CREATE TABLE IF NOT EXISTS modules (
+    id              TEXT PRIMARY KEY,
+    course_id       TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    title_en        TEXT,
+    description     TEXT,
+    order_index     INTEGER NOT NULL DEFAULT 0,
+    estimated_hours INTEGER,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_modules_course ON modules(course_id, order_index);
+
+CREATE TABLE IF NOT EXISTS lessons (
+    id                  TEXT PRIMARY KEY,
+    module_id           TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    title_en            TEXT,
+    description         TEXT,
+    topics              TEXT DEFAULT '[]',       -- JSON array
+    objectives          TEXT DEFAULT '[]',       -- JSON array
+    estimated_minutes   INTEGER NOT NULL DEFAULT 60,
+    system_prompt       TEXT,
+    keywords            TEXT DEFAULT '[]',       -- JSON array
+    order_index         INTEGER NOT NULL DEFAULT 0,
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(module_id) REFERENCES modules(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_lessons_module ON lessons(module_id, order_index);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+    id              TEXT PRIMARY KEY,
+    user_id         TEXT NOT NULL,
+    course_id       TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','completed','dropped')),
+    enrolled_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at    DATETIME,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    UNIQUE(user_id, course_id)
+);
+CREATE INDEX IF NOT EXISTS idx_enrollments_user ON enrollments(user_id);
+
+CREATE TABLE IF NOT EXISTS lesson_progress (
+    id                  TEXT PRIMARY KEY,
+    enrollment_id       TEXT NOT NULL,
+    lesson_id           TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'not_started' CHECK(status IN ('not_started','in_progress','completed')),
+    started_at          DATETIME,
+    completed_at        DATETIME,
+    last_activity_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(enrollment_id) REFERENCES enrollments(id) ON DELETE CASCADE,
+    FOREIGN KEY(lesson_id) REFERENCES lessons(id) ON DELETE CASCADE,
+    UNIQUE(enrollment_id, lesson_id)
+);
+CREATE INDEX IF NOT EXISTS idx_lesson_progress_enrollment ON lesson_progress(enrollment_id);
+"#;
 
 impl crate::chat_db::ChatDb {
     /// Create schema tables for roadmaps

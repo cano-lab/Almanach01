@@ -7,7 +7,6 @@ mod chat_db;
 mod config;
 mod courses;
 mod course_api;
-mod teams;
 
 use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
 use axum::{
@@ -24,7 +23,6 @@ use crate::chat_db::ChatDb;
 
 pub struct AppState {
     pub config: config::Config,
-    pub teams: teams::TeamRegistry,
     pub api_keys: RwLock<HashMap<String, String>>,
     pub data_dir: std::path::PathBuf,
     pub auth: RwLock<AuthManager>,
@@ -71,7 +69,6 @@ async fn main() -> anyhow::Result<()> {
 
     let state = Arc::new(AppState {
         config: config.clone(),
-        teams: teams::TeamRegistry::new(&data_dir)?,
         api_keys: RwLock::new(api_keys),
         data_dir: data_dir.clone(),
         auth: RwLock::new(auth_manager),

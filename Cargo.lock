@@ -51,6 +51,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "almanach-desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "dirs 5.0.1",
+ "ed25519-dalek",
+ "futures-util",
+ "hex",
+ "http 1.4.0",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-http",
+ "tauri-plugin-shell",
+ "tokio",
+ "tokio-tungstenite 0.21.0",
+ "tokio-util",
+ "tungstenite 0.21.0",
+ "url",
+]
+
+[[package]]
 name = "almanach-orchestrator"
 version = "0.1.0"
 dependencies = [
@@ -91,6 +118,23 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "almanach-ui"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "gloo-net 0.5.0",
+ "gloo-timers 0.3.0",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-logger",
+ "web-sys",
+ "yew",
 ]
 
 [[package]]
@@ -502,50 +546,6 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
-]
-
-[[package]]
-name = "claw-pen-desktop"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "dirs 5.0.1",
- "ed25519-dalek",
- "futures-util",
- "hex",
- "http 1.4.0",
- "rand 0.8.5",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-http",
- "tauri-plugin-shell",
- "tokio",
- "tokio-tungstenite 0.21.0",
- "tokio-util",
- "tungstenite 0.21.0",
- "url",
-]
-
-[[package]]
-name = "claw-pen-ui"
-version = "0.1.0"
-dependencies = [
- "futures",
- "gloo-net 0.5.0",
- "gloo-timers 0.3.0",
- "js-sys",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-logger",
- "web-sys",
- "yew",
 ]
 
 [[package]]

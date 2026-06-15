@@ -21,7 +21,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub use crate::roadmap::{Roadmap, RoadmapTopic, RoadmapLesson, StudentProgress, ProgressStatus, UserMetrics};
+pub use crate::courses::{Roadmap, RoadmapTopic, RoadmapLesson, StudentProgress, ProgressStatus, UserMetrics, SCHEMA_COURSES};
 
 /// Single-process Mutex wrapper. SQLite handles its own internal locking; the
 /// Mutex prevents Rust borrow conflicts only. For multi-thread workloads this
@@ -211,7 +211,7 @@ impl ChatDb {
             |row| row.get(0),
         )?;
         if has_roadmaps == 0 {
-            use crate::roadmap::SCHEMA_ROADMAPS;
+            use crate::courses::SCHEMA_ROADMAPS;
             conn.execute_batch(SCHEMA_ROADMAPS)?;
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version) VALUES (6)",

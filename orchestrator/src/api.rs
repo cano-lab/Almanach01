@@ -3,7 +3,7 @@
 use axum::{
     extract::{Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
-    response::{Response, Sse},
+    response::{IntoResponse, Response, Sse},
     Json,
 };
 use axum::response::sse::Event;
@@ -812,9 +812,7 @@ pub async fn stream_conversation(
     });
 
     let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-    let mut response = Sse::new(stream).into_response();
-    response.headers_mut().insert("X-Accel-Buffering", axum::http::HeaderValue::from_static("no"));
-    Ok(response)
+    Ok(Sse::new(stream).into_response())
 }
 
 fn extract_stream_delta(json: &serde_json::Value) -> Option<String> {
