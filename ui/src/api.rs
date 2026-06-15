@@ -109,19 +109,19 @@ pub async fn register(password: &str) -> Result<(), String> {
 pub fn store_token(token: &str) {
     let window = web_sys::window().unwrap();
     let storage = window.local_storage().unwrap().unwrap();
-    storage.set_item("claw_pen_token", token).unwrap();
+    storage.set_item("almanach_token", token).unwrap();
 }
 
 pub fn get_token() -> Option<String> {
     let window = web_sys::window().unwrap();
     let storage = window.local_storage().unwrap().unwrap();
-    storage.get_item("claw_pen_token").unwrap()
+    storage.get_item("almanach_token").unwrap()
 }
 
 pub fn clear_token() {
     let window = web_sys::window().unwrap();
     let storage = window.local_storage().unwrap().unwrap();
-    storage.remove_item("claw_pen_token").unwrap();
+    storage.remove_item("almanach_token").unwrap();
 }
 
 // === Agent API (with auth) ===

@@ -1,4 +1,4 @@
-//! API handlers for Claw Pen Chat Server
+//! API handlers for Almanach Chat Server
 
 use axum::{
     extract::{Path, Query, State, WebSocketUpgrade},
@@ -23,7 +23,7 @@ pub async fn health(State(_state): State<Arc<AppState>>) -> Json<serde_json::Val
     Json(serde_json::json!({
         "status": "ok",
         "version": env!("CARGO_PKG_VERSION"),
-        "service": "claw-pen-chat"
+        "service": "almanach-chat"
     }))
 }
 

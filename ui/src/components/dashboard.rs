@@ -234,7 +234,7 @@ pub fn dashboard() -> Html {
             // Sidebar with agent list
             <div class="sidebar">
                 <div class="sidebar-header">
-                    <h1>{"🦀 Claw Pen"}</h1>
+                    <h1>{"🦀 Almanach"}</h1>
                 </div>
                 <div class="agent-list">
                     if *loading {
@@ -353,7 +353,7 @@ pub fn dashboard() -> Html {
                 } else {
                     <div class="empty-main">
                         <div class="emoji">{"🦀"}</div>
-                        <h2>{"Claw Pen"}</h2>
+                        <h2>{"Almanach"}</h2>
                         <p>{"Select an agent to start chatting or view logs"}</p>
                     </div>
                 }

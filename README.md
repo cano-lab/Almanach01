@@ -37,7 +37,7 @@ The server starts on `http://localhost:3000` (or configured port).
 
 ## First Course: Ontario MTH1W
 
-The first curriculum implemented is Ontario Grade 9 Mathematics (MTH1W) — 4 units, 43 lessons, ~110 hours. See `clawpen_curriculum_mth1w.md` in the parent workspace for the full plan.
+The first curriculum implemented is Ontario Grade 9 Mathematics (MTH1W) — 4 units, 43 lessons, ~110 hours. See `almanach_curriculum_mth1w.md` in the parent workspace for the full plan.
 
 ## License
 

@@ -1,5 +1,5 @@
 [package]
-name = "claw-pen-desktop"
+name = "almanach-desktop"
 version.workspace = true
 edition.workspace = true
 

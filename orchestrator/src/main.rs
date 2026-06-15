@@ -5,8 +5,8 @@ mod api;
 mod auth;
 mod chat_db;
 mod config;
-mod roadmap;
-mod roadmap_api;
+mod courses;
+mod course_api;
 mod teams;
 
 use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
@@ -113,15 +113,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/system-prompts", get(auth::admin_list_system_prompts).post(auth::admin_create_system_prompt))
         .route("/api/admin/system-prompts/:id/activate", post(auth::admin_activate_system_prompt))
         .route("/api/admin/system-prompts/:id", delete(auth::admin_delete_system_prompt))
-        .route("/api/roadmaps", get(roadmap_api::list_roadmaps).post(roadmap_api::create_roadmap))
-        .route("/api/roadmaps/:id", get(roadmap_api::get_roadmap).delete(roadmap_api::delete_roadmap))
-        .route("/api/roadmaps/:id/activate", post(roadmap_api::set_active_roadmap))
-        .route("/api/roadmaps/:id/topics", post(roadmap_api::create_topic))
-        .route("/api/topics/:id/lessons", post(roadmap_api::create_lesson))
-        .route("/api/progress/:user_id", get(roadmap_api::get_student_progress))
-        .route("/api/progress/:user_id/:lesson_id", post(roadmap_api::update_lesson_progress))
-        .route("/api/metrics", get(roadmap_api::get_user_metrics))
-        .route("/api/active-roadmap", get(roadmap_api::get_active_roadmap))
+        .route("/api/roadmaps", get(course_api::list_roadmaps).post(course_api::create_roadmap))
+        .route("/api/roadmaps/:id", get(course_api::get_roadmap).delete(course_api::delete_roadmap))
+        .route("/api/roadmaps/:id/activate", post(course_api::set_active_roadmap))
+        .route("/api/roadmaps/:id/topics", post(course_api::create_topic))
+        .route("/api/topics/:id/lessons", post(course_api::create_lesson))
+        .route("/api/progress/:user_id", get(course_api::get_student_progress))
+        .route("/api/progress/:user_id/:lesson_id", post(course_api::update_lesson_progress))
+        .route("/api/metrics", get(course_api::get_user_metrics))
+        .route("/api/active-roadmap", get(course_api::get_active_roadmap))
         .route("/ws/chat", get(api::chat_websocket))
         .fallback_service(ServeDir::new("./static-site"))
         .layer(

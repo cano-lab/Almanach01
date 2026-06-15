@@ -1,4 +1,4 @@
-//! Roadmap / Curriculum Tracking Module for Claw Pen Chat
+//! Roadmap / Curriculum Tracking Module for Almanach Chat
 //!
 //! Provides lesson roadmaps that students follow, with teacher oversight.
 

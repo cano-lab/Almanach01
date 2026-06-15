@@ -1,4 +1,4 @@
-// Claw Pen Desktop - Tauri App with Rust WebSockets
+// Almanach Desktop - Tauri App with Rust WebSockets
 // With Ed25519 device identity and floating window support
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -61,7 +61,7 @@ pub struct WindowManager {
 
 fn get_device_keys_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join(".openclaw").join("claw-pen-device.json")
+    home.join(".openclaw").join("almanach-device.json")
 }
 
 struct DeviceKeys {
@@ -268,7 +268,7 @@ async fn pop_out_agent(
     );
 
     WebviewWindowBuilder::new(&app, &window_label, WebviewUrl::App(url.into()))
-        .title(format!("{} - Claw Pen", agent_name))
+        .title(format!("{} - Almanach", agent_name))
         .inner_size(600.0, 700.0)
         .min_inner_size(400.0, 500.0)
         .build()
@@ -532,7 +532,7 @@ async fn open_agent_creator(app: AppHandle) -> Result<(), String> {
     }
 
     WebviewWindowBuilder::new(&app, window_label, WebviewUrl::App("agent-creator.html".into()))
-        .title("Create Agent - Claw Pen")
+        .title("Create Agent - Almanach")
         .inner_size(850.0, 900.0)
         .min_inner_size(650.0, 700.0)
         .resizable(true)

@@ -156,7 +156,7 @@ pub async fn connect_to_agent_with_token(
 pub fn load_or_create_device_keys() -> anyhow::Result<(ed25519_dalek::SigningKey, String)> {
     use base64::Engine;
     let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    let path = home.join(".openclaw").join("claw-pen-orchestrator-device.json");
+    let path = home.join(".openclaw").join("almanach-orchestrator-device.json");
 
     if path.exists() {
         let data = std::fs::read_to_string(&path)?;
@@ -277,7 +277,7 @@ pub fn build_device_connect_request(req_id: &str, nonce: &str, signing_key: &ed2
 async fn main() -> Result<()> {
     println!("Connecting to agent at 127.0.0.1:18800...");
 
-    match connect_to_agent_with_token(18800, Some("clawpen")).await {
+    match connect_to_agent_with_token(18800, Some("almanach")).await {
         Ok(_) => {
             println!("✅ Connected to agent!");
         }

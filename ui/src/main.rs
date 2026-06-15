@@ -38,7 +38,7 @@ fn app() -> Html {
         <div class="app">
             if *authenticated {
                 <header class="header">
-                    <h1>{"🦀 Claw Pen"}</h1>
+                    <h1>{"🦀 Almanach"}</h1>
                     <nav class="nav">
                         <button
                             class={format!("nav-link {}", if *current_view == "agents" { "active" } else { "" })}

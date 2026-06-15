@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Claw Pen",
+  "productName": "Almanach",
   "version": "0.1.0",
-  "identifier": "com.clawpen.app",
+  "identifier": "com.almanach.app",
   "build": {
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Claw Pen",
+        "title": "Almanach",
         "width": 1200,
         "height": 800,
         "resizable": true,
@@ -25,7 +25,7 @@
       "capabilities": [
         {
           "identifier": "default",
-          "description": "Default capabilities",
+          "description": "Default capabilities for Almanach",
           "windows": ["main"],
           "permissions": [
             "core:default",

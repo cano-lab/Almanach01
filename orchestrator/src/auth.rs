@@ -1,4 +1,4 @@
-//! JWT Authentication Module for Claw Pen Orchestrator
+//! JWT Authentication Module for Almanach Orchestrator
 //!
 //! This module provides JWT-based authentication for all API endpoints.
 //!
@@ -1157,11 +1157,11 @@ pub fn validate_ws_token(auth: &AuthManager, query_params: &str) -> Option<Claim
 // === CLI Utilities ===
 
 /// Set the admin password from CLI
-/// Usage: claw-pen-orchestrator --set-password
+/// Usage: almanach-orchestrator --set-password
 pub fn cli_set_password(data_dir: &Path) -> Result<(), AuthError> {
     use std::io::{self, BufRead, Write};
 
-    println!("Set admin password for Claw Pen Orchestrator");
+    println!("Set admin password for Almanach Orchestrator");
     print!("Enter new password: ");
     io::stdout().flush()?;
 

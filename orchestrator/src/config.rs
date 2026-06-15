@@ -61,7 +61,7 @@ pub struct Config {
     /// Used when network_backend = "headscale"
     #[serde(default)]
     pub headscale_auth_key: Option<String>,
-    /// Headscale namespace (defaults to "claw-pen" if not specified)
+    /// Headscale namespace (defaults to "almanach" if not specified)
     #[serde(default)]
     pub headscale_namespace: Option<String>,
     #[serde(default)]
@@ -156,7 +156,7 @@ fn default_static_dir() -> Option<String> {
 }
 
 fn default_runtime_socket() -> String {
-    "/var/run/claw-pen.sock".to_string()
+    "/var/run/almanach.sock".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -179,17 +179,17 @@ pub struct ModelServerConfig {
 
 /// Config file locations to search (in order of priority)
 const CONFIG_FILE_NAMES: &[&str] = &[
-    "claw-pen.toml",
-    "claw-pen.yaml",
-    "claw-pen.yml",
-    "claw-pen.json",
+    "almanach.toml",
+    "almanach.yaml",
+    "almanach.yml",
+    "almanach.json",
 ];
 
 const CONFIG_DIRS: &[&str] = &[
     ".", // Current directory
-    ".config/claw-pen",
-    "~/.config/claw-pen",
-    "/etc/claw-pen",
+    ".config/almanach",
+    "~/.config/almanach",
+    "/etc/almanach",
 ];
 
 fn find_config_file() -> Option<std::path::PathBuf> {
@@ -223,7 +223,7 @@ pub fn load() -> anyhow::Result<Config> {
         .set_default("static-dir", None::<String>)?
         .set_default("deployment-mode", "windows-wsl")?
         .set_default("network-backend", "tailscale")?
-        .set_default("runtime-socket", "/var/run/claw-pen.sock")?
+        .set_default("runtime-socket", "/var/run/almanach.sock")?
         .set_default("container-runtime", "docker")?
         .set_default("exo-path", None::<String>)?
         .set_default("tailscale-auth-key", None::<String>)?

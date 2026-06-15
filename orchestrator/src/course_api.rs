@@ -1,4 +1,4 @@
-//! Roadmap / Curriculum Tracking API Handlers for Claw Pen
+//! Roadmap / Curriculum Tracking API Handlers for Almanach
 
 use axum::{
     extract::{Path, State},
@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::AppState;
 use crate::auth::AuthError;
-use crate::roadmap::{
+use crate::courses::{
     Roadmap, RoadmapTopic, RoadmapLesson, ProgressStatus,
     StudentProgress, UserMetrics,
 };
