@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claw Pen — Chat</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <style>
+        :root {
+            --bg-primary: #f7f5f0; --bg-secondary: #efebe3; --bg-tertiary: #e8e2d8;
+            --text-primary: #1a1a1a; --text-secondary: #5a5a5a; --text-tertiary: #8a8a8a;
+            --border: #d4cdc0; --border-thick: #2d2d2d;
+            --accent-teal: #2a7f7f; --accent-rust: #b85c38; --accent-cadmium: #d4a843;
+            --accent-surface: rgba(42, 127, 127, 0.08);
+            --radius: 2px; --shadow: 0 1px 3px rgba(26, 26, 26, 0.06); --line-weight: 1.5px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg-primary); color: var(--text-primary); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.5; min-height: 100vh; display: flex; overflow: hidden; }
+
+        /* Skeleton */
+        @keyframes skeleton-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .skeleton { background: var(--border); border-radius: var(--radius); animation: skeleton-pulse 1.5s ease-in-out infinite; }
+        .skeleton-text { height: 14px; margin-bottom: 8px; }
+        .skeleton-title { height: 18px; width: 60%; margin-bottom: 12px; }
+        .skeleton-avatar { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; }
+        .skeleton-row { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
+        .skeleton-bubble { flex: 1; height: 60px; border-radius: 8px; }
+
+        /* Accessibility */
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: url('/fonts/OpenDyslexic-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'OpenDyslexic';
+            src: url('/fonts/OpenDyslexic-Bold.woff2') format('woff2');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+        .font-dyslexic { font-family: 'OpenDyslexic', sans-serif; }
+        .bionic-reading b { font-weight: 700; color: inherit; }
+        .bionic-reading { font-weight: 400; }
+
+        /* Sidebar */
+        #sidebar { width: 300px; background: var(--bg-secondary); border-right: var(--line-weight) solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; height: 100vh; }
+        .sidebar-header { padding: 20px 24px; border-bottom: var(--line-weight) solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+        .sidebar-header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); }
+        .sidebar-header h1 span { color: var(--accent-teal); }
+        .new-chat-btn { width: calc(100% - 48px); margin: 16px 24px; padding: 10px 16px; background: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); border-radius: var(--radius); color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .new-chat-btn:hover { background: #1f6b6b; }
+        .conversations-list { flex: 1; overflow-y: auto; min-height: 0; padding: 0 12px; }
+        .conversation-item { display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 4px; border-radius: var(--radius); cursor: pointer; transition: all 0.2s; position: relative; border: var(--line-weight) solid transparent; }
+        .conversation-item:hover { background: var(--bg-tertiary); border-color: var(--border); }
+        .conversation-item.active { background: var(--accent-surface); border-color: var(--accent-teal); }
+        .conversation-icon { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: 700; flex-shrink: 0; position: relative; }
+        .color-picker { display: none; position: absolute; top: 100%; left: 0; flex-wrap: wrap; width: 72px; gap: 2px; padding: 4px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: 4px; z-index: 10; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .color-picker span { width: 14px; height: 14px; border-radius: 50%; cursor: pointer; border: 1px solid var(--border); }
+        .color-picker span:hover { transform: scale(1.2); }
+        .conversation-info { flex: 1; min-width: 0; }
+        .conversation-title { font-size: 14px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+        .conversation-meta { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+        .delete-btn { display: none; width: 24px; height: 24px; align-items: center; justify-content: center; background: transparent; border: none; color: var(--text-tertiary); cursor: pointer; font-size: 16px; border-radius: 4px; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); }
+        .conversation-item:hover .delete-btn { display: flex; }
+        .delete-btn:hover { background: var(--accent-rust); color: white; }
+        .sidebar-footer { padding: 16px 24px; border-top: var(--line-weight) solid var(--border); flex-shrink: 0; }
+        .user-pill { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-primary); border-radius: var(--radius); border: var(--line-weight) solid var(--border); }
+        .user-pill .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--accent-teal); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+        .user-pill .name { font-size: 13px; font-weight: 600; }
+        .user-pill .role-badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; font-weight: 700; }
+        .role-badge.admin { background: var(--accent-rust); color: white; }
+        .role-badge.student { background: var(--accent-teal); color: white; }
+
+        /* Main Chat */
+        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100vh; }
+        .chat-header { padding: 16px 24px; border-bottom: var(--line-weight) solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--bg-primary); }
+        .chat-header h2 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        .prompt-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--accent-surface); border: var(--line-weight) solid var(--accent-teal); border-radius: var(--radius); font-size: 12px; color: var(--accent-teal); cursor: pointer; }
+        .messages-container { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+        .message { display: flex; gap: 12px; align-items: flex-start; max-width: 80%; }
+        .message.user { align-self: flex-end; flex-direction: row-reverse; }
+        .message.system { align-self: center; }
+        .message-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+        .message-bubble { padding: 12px 16px; border-radius: 8px; border: var(--line-weight) solid var(--border); background: white; font-size: 15px; line-height: 1.5; }
+        .message.user .message-bubble { background: var(--accent-teal); color: white; border-color: var(--accent-teal); }
+        .message.assistant .message-bubble { background: white; color: var(--text-primary); }
+        .message.system .message-bubble { background: var(--accent-cadmium); color: var(--text-primary); font-style: italic; font-size: 14px; border: var(--line-weight) dashed var(--accent-cadmium); text-align: center; }
+
+        /* Code Execution */
+        .code-block { position: relative; margin: 8px 0; }
+        .code-tabs { display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        .tab-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
+        .tab-btn.active { background: #333; color: #fff; }
+        .tab-btn:hover { color: #fff; }
+        .tab-panel iframe { width: 100%; height: 300px; border: 1px solid var(--border); border-radius: 4px; background: white; }
+        .code-block pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.4; border: 1px solid #333; }
+        .code-block .run-btn { position: absolute; top: 6px; right: 6px; padding: 4px 10px; font-size: 12px; background: var(--accent-teal); color: white; border: none; border-radius: 4px; cursor: pointer; opacity: 1; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+        .code-block .run-btn:hover { background: #1f6b6b; box-shadow: 0 3px 6px rgba(0,0,0,0.4); }
+        .code-block .run-btn:disabled { background: var(--text-tertiary); cursor: not-allowed; }
+        .code-output { margin-top: 4px; padding: 8px 12px; background: #f0f0f0; border: 1px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .code-output .pyodide-note { font-size: 11px; color: #999; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ddd; }
+        .code-output.error { color: var(--accent-rust); border-color: var(--accent-rust); background: #fff5f0; }
+        .code-output img { max-width: 100%; border-radius: 4px; }
+
+        /* Load More */
+        .load-more-btn { display: flex; align-items: center; justify-content: center; padding: 8px; margin: 8px 0; background: transparent; color: var(--text-secondary); border: var(--line-weight) dashed var(--border); border-radius: var(--radius); cursor: pointer; font-size: 13px; width: 100%; transition: all 0.2s; }
+        .load-more-btn:hover { background: var(--accent-surface); color: var(--accent-teal); border-color: var(--accent-teal); }
+
+        /* Replying Indicator */
+        .replying-indicator { align-self: flex-start; display: flex; align-items: center; gap: 12px; max-width: 80%; }
+        .replying-indicator .message-bubble { display: flex; align-items: center; gap: 10px; background: var(--bg-secondary); }
+        .dots { display: flex; gap: 4px; }
+        .dots span { width: 6px; height: 6px; background: var(--accent-teal); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
+        .dots span:nth-child(1) { animation-delay: -0.32s; }
+        .dots span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        .replying-indicator .text { font-size: 14px; color: var(--text-secondary); font-style: italic; }
+
+        /* Input */
+        .input-area { padding: 16px 24px; border-top: var(--line-weight) solid var(--border); display: flex; gap: 12px; flex-shrink: 0; background: var(--bg-primary); }
+        .message-input { flex: 1; padding: 12px 16px; border: var(--line-weight) solid var(--border); border-radius: 8px; font-size: 15px; resize: none; font-family: inherit; background: white; outline: none; }
+        .message-input:focus { border-color: var(--accent-teal); }
+        .send-btn { padding: 12px 20px; background: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .send-btn:hover { background: #1f6b6b; }
+        .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Empty State */
+        .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--text-tertiary); }
+        .empty-state h3 { font-size: 18px; font-weight: 600; color: var(--text-secondary); }
+
+        /* Login Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(26, 26, 26, 0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .modal { background: var(--bg-primary); border: var(--line-weight) solid var(--border-thick); border-radius: var(--radius); padding: 32px; width: 400px; max-width: 90vw; }
+        .modal h2 { font-size: 20px; margin-bottom: 20px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary); }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px 12px; border: var(--line-weight) solid var(--border); border-radius: var(--radius); font-size: 14px; background: white; outline: none; }
+        .form-group input:focus { border-color: var(--accent-teal); }
+        .tabs { display: flex; gap: 20px; margin-bottom: 20px; border-bottom: var(--line-weight) solid var(--border); }
+        .tab { padding: 8px 0; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-tertiary); border-bottom: 2px solid transparent; margin-bottom: -1.5px; }
+        .tab:hover { color: var(--text-primary); }
+        .btn { padding: 10px 16px; background: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); border-radius: var(--radius); color: white; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; }
+        .btn:hover { background: #1f6b6b; }
+        .error { color: var(--accent-rust); font-size: 13px; margin-top: 8px; }
+        .success { color: #5a7a5a; font-size: 13px; margin-top: 8px; }
+        .hidden { display: none !important; }
+
+        /* Admin Dashboard */
+        .admin-modal { position: fixed; inset: 0; background: var(--bg-primary); z-index: 50; display: flex; flex-direction: column; }
+        .admin-header { padding: 16px 24px; border-bottom: var(--line-weight) solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .admin-tabs { display: flex; gap: 4px; padding: 0 24px; border-bottom: var(--line-weight) solid var(--border); overflow-x: auto; }
+        .admin-tab { padding: 10px 16px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-tertiary); border-bottom: 2px solid transparent; white-space: nowrap; }
+        .admin-tab:hover { color: var(--text-primary); }
+        .admin-tab.active { color: var(--accent-teal); border-bottom-color: var(--accent-teal); }
+        .admin-content { flex: 1; overflow-y: auto; padding: 24px; display: none; }
+        .admin-content:not(.hidden) { display: block; }
+        .admin-content:not(.hidden)#adminChatView { display: flex; }
+        .user-card { border: var(--line-weight) solid var(--border); padding: 16px; margin-bottom: 12px; border-radius: var(--radius); }
+        .user-card h4 { font-size: 15px; margin-bottom: 4px; }
+        .user-card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+        .action-btn { padding: 6px 12px; font-size: 13px; border: var(--line-weight) solid var(--border); border-radius: var(--radius); cursor: pointer; background: white; margin-right: 8px; }
+        .action-btn.approve { border-color: var(--accent-teal); color: var(--accent-teal); }
+        .action-btn.reject { border-color: var(--accent-rust); color: var(--accent-rust); }
+
+/* Roadmap Styles */
+        .roadmap-card { border: var(--line-weight) solid var(--border); padding: 20px; margin-bottom: 16px; border-radius: var(--radius); background: white; }
+        .roadmap-card h3 { font-size: 16px; margin-bottom: 4px; }
+        .roadmap-card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+        .roadmap-card .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: var(--radius); font-weight: 600; margin-right: 8px; }
+        .roadmap-card .badge.active { background: var(--accent-surface); color: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); }
+        .roadmap-card .badge.inactive { background: var(--bg-secondary); color: var(--text-tertiary); border: var(--line-weight) solid var(--border); }
+        .topic-block { border-left: 3px solid var(--accent-teal); padding-left: 12px; margin: 12px 0; }
+        .topic-block h4 { font-size: 14px; margin-bottom: 4px; }
+        .lesson-list { margin: 8px 0 8px 16px; }
+        .lesson-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--bg-secondary); }
+        .lesson-item:last-child { border-bottom: none; }
+        .metric-card { border: var(--line-weight) solid var(--border); padding: 16px; border-radius: var(--radius); background: white; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .metric-card .metric-value { font-size: 24px; font-weight: 700; color: var(--accent-teal); }
+        .metric-card .metric-label { font-size: 12px; color: var(--text-tertiary); }
+        .form-inline { display: flex; gap: 8px; margin-bottom: 12px; }
+        .form-inline input { flex: 1; padding: 8px 10px; border: var(--line-weight) solid var(--border); border-radius: var(--radius); font-size: 14px; }
+        .form-inline textarea { flex: 1; padding: 8px 10px; border: var(--line-weight) solid var(--border); border-radius: var(--radius); font-size: 14px; min-height: 60px; font-family: inherit; }
+        .btn-small { padding: 8px 14px; font-size: 13px; background: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); border-radius: var(--radius); color: white; font-weight: 600; cursor: pointer; }
+        .btn-small:hover { background: #1f6b6b; }
+        .btn-small.secondary { background: white; color: var(--text-primary); border-color: var(--border); }
+        .btn-small.secondary:hover { background: var(--bg-secondary); }
+        .btn-small.danger { background: white; color: var(--accent-rust); border-color: var(--accent-rust); }
+        .btn-small.danger:hover { background: var(--accent-rust); color: white; }
+        .progress-bar { height: 6px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+        .progress-bar-fill { height: 100%; background: var(--accent-teal); border-radius: 3px; transition: width 0.3s; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h1>Claw<span>Pen</span></h1>
+            <button id="adminBtn" class="action-btn" style="display:none">Admin</button>
+        </div>
+        <button class="new-chat-btn" onclick="createNewChat()">+ New Chat</button>
+        <div class="conversations-list" id="conversationsList"></div>
+        <div class="sidebar-footer" id="sidebarFooter" style="display:none">
+            <div class="user-pill">
+                <div class="avatar" id="userAvatar">?</div>
+                <div style="flex:1;min-width:0">
+                    <div class="name" id="userName">User</div>
+                    <span class="role-badge" id="userRole">student</span>
+                </div>
+                <button onclick="doLogout()" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:var(--radius);" title="Logout">Logout</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="main">
+        <div class="chat-header" id="chatHeader">
+            <h2 id="chatTitle">Select a chat</h2>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <span class="prompt-badge" id="promptBadge" onclick="showPromptModal()">Default</span>
+                <select id="fontToggle" onchange="setFontMode(this.value)" style="padding:4px 8px;font-size:12px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);background:var(--bg-primary);cursor:pointer;outline:none;">
+                    <option value="default">Standard Font</option>
+                    <option value="dyslexic">Dyslexia Font</option>
+                    <option value="bionic">Bionic Reading</option>
+                </select>
+            </div>
+        </div>
+        <div class="empty-state" id="emptyState">
+            <h3>Welcome to Claw Pen</h3>
+            <p>Select a conversation or start a new chat</p>
+        </div>
+        <div class="messages-container hidden" id="messagesContainer"></div>
+        <div class="input-area hidden" id="inputArea">
+            <textarea class="message-input" id="messageInput" rows="1" placeholder="Type a message... (use ```python for code)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="loginModal">
+        <div class="modal">
+            <div class="tabs">
+                <span class="tab" id="tabLogin" onclick="switchTab('login')">Login</span>
+                <span class="tab" id="tabRegister" onclick="switchTab('register')">Register</span>
+            </div>
+            <div id="loginForm">
+                <div class="form-group"><label>Username (optional for admin)</label><input id="loginUsername" placeholder="leave blank for admin"></div>
+                <div class="form-group"><label>Password</label><input id="loginPassword" type="password" placeholder="password"></div>
+                <button class="btn" onclick="doLogin()">Login</button>
+            </div>
+            <div id="registerForm" class="hidden">
+                <div class="form-group"><label>Username</label><input id="regUsername" placeholder="username"></div>
+                <div class="form-group"><label>Display Name</label><input id="regDisplayName" placeholder="Your name"></div>
+                <div class="form-group"><label>Password</label><input id="regPassword" type="password" placeholder="min 8 chars"></div>
+                <div class="form-group"><label>Secret Word</label><input id="regSecret" placeholder="secret word"></div>
+                <button class="btn" onclick="doRegister()">Register</button>
+            </div>
+            <div class="error" id="loginError"></div>
+            <div class="success" id="loginSuccess"></div>
+        </div>
+    </div>
+
+    <div class="modal-overlay hidden" id="promptModal">
+        <div class="modal">
+            <h2>System Prompt</h2>
+            <div class="form-group"><textarea id="promptInput" rows="6" placeholder="Enter system prompt..."></textarea></div>
+            <button class="btn" onclick="savePrompt()">Save</button>
+            <button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);margin-top:8px" onclick="document.getElementById('promptModal').classList.add('hidden')">Cancel</button>
+        </div>
+    </div>
+
+    <div class="admin-modal hidden" id="adminDashboardModal">
+        <div class="admin-header">
+            <h2>Admin Dashboard</h2>
+            <button class="action-btn" onclick="closeAdminDashboard()">Close</button>
+        </div>
+        <div class="admin-tabs">
+            <span class="admin-tab" id="adminTabPending" onclick="switchAdminTab('pending')">Pending</span>
+            <span class="admin-tab" id="adminTabAll" onclick="switchAdminTab('all')">All Users</span>
+            <span class="admin-tab" id="adminTabGrid" onclick="switchAdminTab('grid')">Grid</span>
+            <span class="admin-tab" id="adminTabChats" onclick="switchAdminTab('chats')">User Chats</span>
+            <span class="admin-tab" id="adminTabUserPrompts" onclick="switchAdminTab('userPrompts')">User Prompts</span>
+            <span class="admin-tab" id="adminTabPrompts" onclick="switchAdminTab('prompts')">System Prompts</span>
+            <span class="admin-tab" id="adminTabRoadmaps" onclick="switchAdminTab('roadmaps')">Roadmaps</span>
+            <span class="admin-tab" id="adminTabMetrics" onclick="switchAdminTab('metrics')">Metrics</span>
+        </div>
+        <div class="admin-content" id="adminPending"></div>
+        <div class="admin-content hidden" id="adminAllUsers"></div>
+        <div class="admin-content hidden" id="adminGrid"></div>
+        <div class="admin-content hidden" id="adminUserChats"></div>
+        <div class="admin-content hidden" id="adminChatView" style="flex-direction:column;max-height:70vh;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:var(--line-weight) solid var(--border);">
+                <button class="action-btn" onclick="backToUserChats()">← Back to Conversations</button>
+                <h3 id="adminChatViewTitle" style="font-size:16px;font-weight:600;">Conversation</h3>
+                <span id="adminChatViewMeta" style="font-size:13px;color:var(--text-tertiary);"></span>
+            </div>
+            <div id="adminMessagesContainer" style="border:var(--line-weight) solid var(--border);border-radius:var(--radius);padding:16px;flex:1;overflow-y:auto;background:var(--bg-primary);display:flex;flex-direction:column;gap:16px;"></div>
+        </div>
+        <div class="admin-content hidden" id="adminUserPrompts"></div>
+        <div class="admin-content hidden" id="adminPrompts"></div>
+        <div class="admin-content hidden" id="adminRoadmaps"></div>
+        <div class="admin-content hidden" id="adminMetrics"></div>
+    </div>
+
+<script>
+const API_BASE = '';
+let token = localStorage.getItem('token');
+let currentConversation = null;
+let isSending = false;
+let isAdmin = false;
+let pyodide = null;
+let pyodideLoading = false;
+let currentAdminTab = 'pending';
+let messageOffset = 0;
+let hasMoreMessages = false;
+const MESSAGE_PAGE_SIZE = 50;
+
+// ─── Pyodide ───
+async function initPyodide() {
+    if (pyodide || pyodideLoading) return;
+    pyodideLoading = true;
+    try {
+        pyodide = await loadPyodide();
+        await pyodide.loadPackage('matplotlib');
+        await pyodide.loadPackage('numpy');
+    } catch (e) { console.error('Pyodide failed:', e); }
+    pyodideLoading = false;
+}
+
+async function runPython(code, outputId) {
+    const outputEl = document.getElementById(outputId);
+    if (!outputEl) return;
+    if (!pyodide) { outputEl.textContent = 'Loading Python runtime (~20MB)...'; await initPyodide(); }
+    if (!pyodide) { outputEl.textContent = 'Failed to load Python.'; outputEl.classList.add('error'); return; }
+    outputEl.textContent = 'Running...';
+    outputEl.classList.remove('error');
+    let output = '';
+    try {
+        // Set up stdout/stderr capture
+        pyodide.setStdout({ batched: (s) => { output += s; } });
+        pyodide.setStderr({ batched: (s) => { output += s; } });
+        
+        // Handle matplotlib - redirect to output div
+        if (code.includes('matplotlib') || code.includes('plt.')) {
+            await pyodide.runPythonAsync(`
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from pyodide.http import pyfetch
+import io, base64
+
+def show():
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+    img = base64.b64encode(buf.read()).decode()
+    plt.clf()
+    return f'<img src="data:image/png;base64,{img}" style="max-width:100%">'
+
+plt.show = show
+`);
+        }
+        
+        await pyodide.loadPackagesFromImports(code);
+        const result = await pyodide.runPythonAsync(code);
+        
+        // Check if result is an image (matplotlib show)
+        if (typeof result === 'string' && result.startsWith('<img')) {
+            outputEl.innerHTML = output + result;
+        } else if (result !== undefined && result !== null) {
+            outputEl.textContent = (output ? output + '\n' : '') + String(result);
+        } else {
+            outputEl.textContent = output || '(no output)';
+        }
+    } catch (e) {
+        outputEl.textContent = (output ? output + '\n' : '') + e.message;
+        outputEl.classList.add('error');
+    }
+}
+
+const htmlPreviewStore = {};
+let htmlPreviewCounter = 0;
+
+function switchTab(previewId, mode) {
+    const codePanel = document.getElementById('code-' + previewId);
+    const previewPanel = document.getElementById('preview-' + previewId);
+    if (!codePanel || !previewPanel) return;
+    const tabs = codePanel.parentElement.querySelectorAll('.tab-btn');
+    if (mode === 'code') {
+        codePanel.style.display = 'block';
+        previewPanel.style.display = 'none';
+        if (tabs[0]) tabs[0].classList.add('active');
+        if (tabs[1]) tabs[1].classList.remove('active');
+    } else {
+        codePanel.style.display = 'none';
+        previewPanel.style.display = 'block';
+        if (tabs[0]) tabs[0].classList.remove('active');
+        if (tabs[1]) tabs[1].classList.add('active');
+        if (!previewPanel.querySelector('iframe')) {
+            const code = htmlPreviewStore[previewId];
+            if (code) {
+                const iframe = document.createElement('iframe');
+                iframe.style.cssText = 'width:100%;height:300px;border:none;';
+                iframe.sandbox = 'allow-scripts';
+                const blob = new Blob([code], { type: 'text/html' });
+                iframe.src = URL.createObjectURL(blob);
+                previewPanel.appendChild(iframe);
+            }
+        }
+    }
+}
+
+function fullScreenHTML(previewId) {
+    const code = htmlPreviewStore[previewId];
+    if (!code) return;
+    const blob = new Blob([code], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function previewHTML(previewId) {
+    console.log('previewHTML called', previewId, htmlPreviewStore[previewId] ? 'code found' : 'code NOT found');
+    const outputEl = document.getElementById(previewId);
+    const code = htmlPreviewStore[previewId];
+    if (!outputEl || !code) return;
+    
+    outputEl.style.display = 'block';
+    outputEl.innerHTML = '';
+    
+    // Header bar with label + Full screen + Close
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
+    
+    const label = document.createElement('span');
+    label.style.cssText = 'font-size:11px;color:var(--text-tertiary);';
+    label.textContent = 'Preview';
+    
+    const right = document.createElement('div');
+    const fsBtn = document.createElement('button');
+    fsBtn.style.cssText = 'font-size:11px;background:none;border:none;color:var(--text-tertiary);cursor:pointer;margin-right:8px;';
+    fsBtn.textContent = '⛶ Full screen';
+    fsBtn.onclick = () => {
+        const blob = new Blob([code], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    };
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'font-size:11px;background:none;border:none;color:var(--text-tertiary);cursor:pointer;';
+    closeBtn.textContent = '✕ Close';
+    closeBtn.onclick = () => { outputEl.style.display = 'none'; };
+    
+    right.appendChild(fsBtn);
+    right.appendChild(closeBtn);
+    header.appendChild(label);
+    header.appendChild(right);
+    outputEl.appendChild(header);
+    
+    // Sandboxed iframe
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'width:100%;height:300px;border:1px solid var(--border);border-radius:4px;background:white;';
+    iframe.sandbox = 'allow-scripts';
+    iframe.srcdoc = code;
+    outputEl.appendChild(iframe);
+}
+
+// ─── Event Delegation for dynamic code blocks ───
+document.addEventListener('click', function(e) {
+    // Tab buttons (Code / Preview / Full screen)
+    const tabBtn = e.target.closest('[data-tab-id]');
+    if (tabBtn) {
+        const tabId = tabBtn.dataset.tabId;
+        const tabMode = tabBtn.dataset.tabMode;
+        const tabAction = tabBtn.dataset.tabAction;
+        if (tabMode) {
+            switchTab(tabId, tabMode);
+            return;
+        }
+        if (tabAction === 'fullscreen') {
+            fullScreenHTML(tabId);
+            return;
+        }
+    }
+    
+    // Python run button
+    const runBtn = e.target.closest('[data-python-run]');
+    if (runBtn) {
+        const code = decodeURIComponent(runBtn.dataset.pythonCode);
+        const outputId = runBtn.dataset.outputId;
+        runPython(code, outputId);
+    }
+});
+
+// ─── Auth ───
+if (!token) { document.getElementById('loginModal').classList.remove('hidden'); }
+else { fetchUser(); loadConversations(); }
+
+// Restore font mode
+const savedFontMode = localStorage.getItem('fontMode') || 'default';
+document.getElementById('fontToggle').value = savedFontMode;
+setFontMode(savedFontMode);
+
+async function doLogin() {
+    const u = document.getElementById('loginUsername').value.trim();
+    const p = document.getElementById('loginPassword').value;
+    if (!p) return;
+    try {
+        let res;
+        if (u) {
+            // Multi-user login
+            res = await fetch(`${API_BASE}/auth/user/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
+        } else {
+            // Admin login (password only)
+            res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p }) });
+        }
+        const data = await res.json();
+        if (res.ok) { token = data.access_token; localStorage.setItem('token', token); document.getElementById('loginModal').classList.add('hidden'); fetchUser(); loadConversations(); }
+        else { document.getElementById('loginError').textContent = data.error || 'Login failed'; }
+    } catch (e) { document.getElementById('loginError').textContent = 'Connection failed'; }
+}
+
+async function doRegister() {
+    const u = document.getElementById('regUsername').value;
+    const p = document.getElementById('regPassword').value;
+    const s = document.getElementById('regSecret').value;
+    const d = document.getElementById('regDisplayName').value;
+    if (p.length < 8) { document.getElementById('loginError').textContent = 'Password must be at least 8 characters'; return; }
+    try {
+        const res = await fetch(`${API_BASE}/auth/user/register`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p, display_name: d || null, secret_word: s }) });
+        const data = await res.json();
+        if (res.ok) { document.getElementById('loginSuccess').textContent = 'Registration successful! Please wait for admin approval.'; setTimeout(() => switchTab('login'), 2000); }
+        else { document.getElementById('loginError').textContent = data.error || 'Registration failed'; }
+    } catch (e) { document.getElementById('loginError').textContent = 'Connection failed'; }
+}
+
+function switchTab(tab) {
+    document.getElementById('loginError').textContent = '';
+    document.getElementById('loginSuccess').textContent = '';
+    if (tab === 'login') { document.getElementById('loginForm').classList.remove('hidden'); document.getElementById('registerForm').classList.add('hidden'); document.getElementById('tabLogin').style.borderBottom = '2px solid var(--accent-teal)'; document.getElementById('tabLogin').style.color = 'var(--text-primary)'; document.getElementById('tabRegister').style.borderBottom = 'none'; document.getElementById('tabRegister').style.color = 'var(--text-tertiary)'; }
+    else { document.getElementById('loginForm').classList.add('hidden'); document.getElementById('registerForm').classList.remove('hidden'); document.getElementById('tabRegister').style.borderBottom = '2px solid var(--accent-teal)'; document.getElementById('tabRegister').style.color = 'var(--text-primary)'; document.getElementById('tabLogin').style.borderBottom = 'none'; document.getElementById('tabLogin').style.color = 'var(--text-tertiary)'; }
+}
+
+function doLogout() { token = null; localStorage.removeItem('token'); currentConversation = null; location.reload(); }
+
+async function fetchUser() {
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/me`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) { if (res.status === 401) doLogout(); return; }
+        const data = await res.json();
+        isAdmin = data.role === 'admin' || data.role === 'teacher';
+        if (isAdmin) document.getElementById('adminBtn').style.display = 'block';
+        // Populate sidebar footer
+        const footer = document.getElementById('sidebarFooter');
+        const avatar = document.getElementById('userAvatar');
+        const name = document.getElementById('userName');
+        const roleBadge = document.getElementById('userRole');
+        if (footer && data) {
+            footer.style.display = 'block';
+            avatar.textContent = (data.display_name || data.username || 'U')[0].toUpperCase();
+            name.textContent = data.display_name || data.username || data.user_id || 'User';
+            roleBadge.textContent = data.role || 'user';
+            roleBadge.className = 'role-badge ' + (data.role || 'user');
+        }
+    } catch (e) {}
+}
+
+function setFontMode(mode) {
+    localStorage.setItem('fontMode', mode);
+    const messagesContainer = document.getElementById('messagesContainer');
+    const inputArea = document.getElementById('inputArea');
+    const emptyState = document.getElementById('emptyState');
+    const els = [messagesContainer, inputArea, emptyState, document.getElementById('chatTitle')];
+    els.forEach(el => { if (el) { el.classList.remove('font-dyslexic', 'bionic-reading'); if (mode === 'dyslexic') el.classList.add('font-dyslexic'); if (mode === 'bionic') el.classList.add('bionic-reading'); } });
+    if (mode === 'bionic') applyBionicToMessages();
+    else removeBionicFromMessages();
+}
+
+function applyBionicToMessages() {
+    document.querySelectorAll('.message').forEach(msg => applyBionicToSingleMessage(msg));
+}
+
+function removeBionicFromMessages() {
+    document.querySelectorAll('.message span').forEach(span => {
+        if (span.querySelector('b') && !span.id) {
+            const text = span.textContent;
+            const textNode = document.createTextNode(text);
+            span.parentNode.replaceChild(textNode, span);
+        }
+    });
+}
+
+// ─── Conversations ───
+async function loadConversations() {
+    if (!token) return;
+    const list = document.getElementById('conversationsList');
+    // Show skeleton while loading
+    if (list.children.length === 0) {
+        list.innerHTML = Array(5).fill(0).map(() => `
+            <div class="skeleton-row">
+                <div class="skeleton skeleton-avatar"></div>
+                <div style="flex:1">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-text" style="width:40%"></div>
+                </div>
+            </div>
+        `).join('');
+    }
+    try {
+        const res = await fetch(`${API_BASE}/api/conversations`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) { if (res.status === 401) doLogout(); return; }
+        const data = await res.json();
+        const conversations = Array.isArray(data) ? data : (data.conversations || []);
+        list.innerHTML = '';
+        conversations.forEach((conv, i) => {
+            const div = document.createElement('div');
+            div.className = 'conversation-item' + (conv.id === currentConversation ? ' active' : '');
+            div.dataset.id = conv.id;
+            div.onclick = (e) => { if (e.target.closest('.color-picker, .title-input, .delete-btn')) return; loadConversation(conv.id); };
+            const color = conv.color || ['#2a7f7f','#b85c38','#d4a843','#5a7a5a','#8a6a8a'][i % 5];
+            div.innerHTML = `
+                <div class="conversation-icon" style="background: ${color}; position: relative;">${(conv.title || 'C')[0]}
+                    <div class="color-picker">
+                        <span data-color="#2a7f7f" style="background:#2a7f7f"></span>
+                        <span data-color="#b85c38" style="background:#b85c38"></span>
+                        <span data-color="#d4a843" style="background:#d4a843"></span>
+                        <span data-color="#5a7a5a" style="background:#5a7a5a"></span>
+                        <span data-color="#8a6a8a" style="background:#8a6a8a"></span>
+                        <span data-color="#3a6a9a" style="background:#3a6a9a"></span>
+                        <span data-color="#9a5a5a" style="background:#9a5a5a"></span>
+                        <span data-color="#6a8a5a" style="background:#6a8a5a"></span>
+                    </div>
+                </div>
+                <div class="conversation-info">
+                    <div class="conversation-title" title="Click to rename">${escapeHtml(conv.title || 'Untitled')}</div>
+                    <div class="conversation-meta">${conv.message_count || 0} messages</div>
+                </div>
+                <button class="delete-btn" title="Delete conversation">×</button>
+            `;
+            const iconDiv = div.querySelector('.conversation-icon');
+            const picker = div.querySelector('.color-picker');
+            iconDiv.addEventListener('mouseenter', () => { picker.style.display = 'flex'; });
+            iconDiv.addEventListener('mouseleave', () => { picker.style.display = 'none'; });
+            picker.querySelectorAll('span').forEach(span => {
+                span.onclick = (e) => { e.stopPropagation(); updateConversationColor(conv.id, span.dataset.color); iconDiv.style.background = span.dataset.color; };
+            });
+            const titleDiv = div.querySelector('.conversation-title');
+            titleDiv.onclick = (e) => {
+                e.stopPropagation();
+                const input = document.createElement('input');
+                input.className = 'title-input';
+                input.value = conv.title || 'Untitled';
+                input.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-primary);background:transparent;border:none;border-bottom:1px solid var(--accent-teal);outline:none;width:100%;padding:0;';
+                titleDiv.replaceWith(input);
+                input.focus(); input.select();
+                const save = () => {
+                    const newTitle = input.value.trim() || conv.title || 'Untitled';
+                    updateConversationTitle(conv.id, newTitle);
+                    input.replaceWith(titleDiv);
+                    titleDiv.textContent = newTitle;
+                    conv.title = newTitle;
+                };
+                input.onblur = save;
+                input.onkeydown = (e2) => { if (e2.key === 'Enter') { e2.preventDefault(); input.blur(); } };
+            };
+            div.querySelector('.delete-btn').onclick = (e) => { e.stopPropagation(); deleteConversation(conv.id, conv.title); };
+            list.appendChild(div);
+        });
+    } catch (e) {}
+}
+
+async function updateConversationTitle(id, title) {
+    if (!token) return;
+    try { await fetch(`${API_BASE}/api/conversations/${id}`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title }) }); } catch (e) {}
+}
+
+async function updateConversationColor(id, color) {
+    if (!token) return;
+    try { await fetch(`${API_BASE}/api/conversations/${id}`, { method: 'PATCH', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ color }) }); } catch (e) {}
+}
+
+async function createNewChat() {
+    if (!token) { document.getElementById('loginModal').classList.remove('hidden'); return; }
+    try {
+        const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New Chat' }) });
+        if (!res.ok) { if (res.status === 401) doLogout(); return; }
+        const conv = await res.json();
+        currentConversation = conv.id;
+        loadConversation(conv.id);
+        loadConversations();
+    } catch (e) {}
+}
+
+async function loadConversation(id, append = false) {
+    if (!token) return;
+    if (!append) { currentConversation = id; messageOffset = 0; hasMoreMessages = true; }
+    try {
+        const [convRes, msgRes] = await Promise.all([
+            fetch(`${API_BASE}/api/conversations/${id}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch(`${API_BASE}/api/conversations/${id}/messages?limit=${MESSAGE_PAGE_SIZE}&offset=${messageOffset}`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        if (!convRes.ok || !msgRes.ok) { if (convRes.status === 401 || msgRes.status === 401) doLogout(); return; }
+        const conv = await convRes.json();
+        const msgData = await msgRes.json();
+        const messages = Array.isArray(msgData) ? msgData : (msgData.messages || []);
+        hasMoreMessages = messages.length === MESSAGE_PAGE_SIZE;
+        document.getElementById('chatTitle').textContent = conv.title || 'Chat';
+        updatePromptBadge(conv.system_prompt || 'Default');
+        showChat();
+        const container = document.getElementById('messagesContainer');
+        if (!append) { container.innerHTML = ''; }
+        // Prepend messages (oldest first, so prepend to top)
+        const fragment = document.createDocumentFragment();
+        messages.forEach(msg => {
+            const div = document.createElement('div');
+            div.className = `message ${msg.role}`;
+            div.id = `msg-${msg.id}`;
+            div.innerHTML = formatMessageHTML(msg.role, msg.content);
+            fragment.appendChild(div);
+        });
+        if (append && container.firstChild) {
+            container.insertBefore(fragment, container.firstChild);
+        } else {
+            container.appendChild(fragment);
+        }
+        // Add load more button if needed
+        const existingBtn = document.getElementById('loadMoreBtn');
+        if (existingBtn) existingBtn.remove();
+        if (hasMoreMessages && messageOffset > 0) {
+            const btn = document.createElement('button');
+            btn.id = 'loadMoreBtn';
+            btn.className = 'load-more-btn';
+            btn.textContent = 'Load older messages';
+            btn.onclick = () => loadMoreMessages(id);
+            container.insertBefore(btn, container.firstChild);
+        }
+        if (!append) { container.scrollTop = container.scrollHeight; }
+        loadConversations();
+        if (localStorage.getItem('fontMode') === 'bionic') {
+            document.querySelectorAll('.message').forEach(msg => applyBionicToSingleMessage(msg));
+        }
+    } catch (e) {}
+}
+
+async function loadMoreMessages(id) {
+    messageOffset += MESSAGE_PAGE_SIZE;
+    await loadConversation(id, true);
+}
+
+async function deleteConversation(id, title) {
+    if (!confirm(`Delete "${title || 'this conversation'}"? This cannot be undone.`)) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/conversations/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) { if (res.status === 401) doLogout(); return; }
+        if (currentConversation === id) { currentConversation = null; document.getElementById('messagesContainer').innerHTML = ''; document.getElementById('chatTitle').textContent = 'Select a chat'; document.getElementById('emptyState').classList.remove('hidden'); document.getElementById('chatHeader').classList.add('hidden'); document.getElementById('messagesContainer').classList.add('hidden'); document.getElementById('inputArea').classList.add('hidden'); }
+        loadConversations();
+    } catch (e) {}
+}
+
+function showChat() {
+    document.getElementById('emptyState').classList.add('hidden');
+    document.getElementById('chatHeader').classList.remove('hidden');
+    document.getElementById('messagesContainer').classList.remove('hidden');
+    document.getElementById('inputArea').classList.remove('hidden');
+}
+
+function updatePromptBadge(text) {
+    const badge = document.getElementById('promptBadge');
+    badge.textContent = text.length > 20 ? text.slice(0, 20) + '...' : text;
+    badge.title = text;
+}
+
+function showPromptModal() {
+    if (!currentConversation) return;
+    document.getElementById('promptInput').value = document.getElementById('promptBadge').title || '';
+    document.getElementById('promptModal').classList.remove('hidden');
+}
+
+async function savePrompt() {
+    if (!currentConversation) return;
+    const prompt = document.getElementById('promptInput').value.trim();
+    document.getElementById('promptModal').classList.add('hidden');
+    updatePromptBadge(prompt || 'Default');
+    try {
+        await fetch(`${API_BASE}/api/conversations/${currentConversation}/system-prompt`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt || null })
+        });
+    } catch (e) {}
+}
+
+// ─── Messages ───
+function formatMessageHTML(role, content) {
+    let avatar, color;
+    if (role === 'user') { avatar = 'U'; color = 'var(--accent-rust)'; }
+    else if (role === 'system') { avatar = 'S'; color = 'var(--accent-cadmium)'; }
+    else { avatar = 'K'; color = 'var(--accent-teal)'; }
+    return `
+        <div class="message-avatar" style="background: ${color}">${avatar}</div>
+        <div class="message-bubble">${formatContent(content)}</div>
+    `;
+}
+
+function appendMessage(role, content, id) {
+    const container = document.getElementById('messagesContainer');
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+    if (id) div.id = `msg-${id}`;
+    div.innerHTML = formatMessageHTML(role, content);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    if (localStorage.getItem('fontMode') === 'bionic') applyBionicToSingleMessage(div);
+    return div;
+}
+
+function applyBionicToSingleMessage(msg) {
+    const textNodes = [];
+    const walker = document.createTreeWalker(msg, NodeFilter.SHOW_TEXT);
+    let node;
+    while (node = walker.nextNode()) {
+        if (node.parentElement.tagName !== 'B' && node.parentElement.tagName !== 'CODE' && node.parentElement.tagName !== 'A') {
+            textNodes.push(node);
+        }
+    }
+    textNodes.forEach(node => {
+        const text = node.textContent;
+        if (!text.trim()) return;
+        const span = document.createElement('span');
+        span.innerHTML = text.replace(/\b([a-zA-Z0-9_\-]+)\b/g, (match) => {
+            const len = Math.ceil(match.length / 2);
+            return `<b>${match.slice(0, len)}</b>${match.slice(len)}`;
+        });
+        node.parentNode.replaceChild(span, node);
+    });
+}
+
+function updateMessage(id, content) {
+    const div = document.getElementById(`msg-${id}`);
+    if (div) {
+        const bubble = div.querySelector('.message-bubble');
+        if (bubble) bubble.innerHTML = formatContent(content);
+    }
+}
+
+function showReplying() {
+    const container = document.getElementById('messagesContainer');
+    if (document.getElementById('replying-indicator')) return;
+    const div = document.createElement('div');
+    div.id = 'replying-indicator';
+    div.className = 'replying-indicator';
+    div.innerHTML = `
+        <div class="message-avatar" style="background: var(--accent-teal)">K</div>
+        <div class="message-bubble">
+            <div class="dots"><span></span><span></span><span></span></div>
+            <span class="text">Thinking...</span>
+        </div>
+    `;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function hideReplying() {
+    const el = document.getElementById('replying-indicator');
+    if (el) el.remove();
+}
+
+function formatContent(text) {
+    // Extract code blocks BEFORE escaping HTML
+    const codeBlocks = [];
+    
+    // Extract HTML blocks first (before generic catch-all)
+    text = text.replace(/```html\n([\s\S]*?)```/g, (match, code) => {
+        const previewId = 'html-preview-' + (++htmlPreviewCounter);
+        htmlPreviewStore[previewId] = code;
+        const placeholder = `\x00CODEBLOCK_${codeBlocks.length}_\x00`;
+        codeBlocks.push({
+            type: 'html',
+            placeholder,
+            html: `<div class="code-block">
+                <div class="code-tabs">
+                    <button class="tab-btn active" data-tab-id="${previewId}" data-tab-mode="code">Code</button>
+                    <button class="tab-btn" data-tab-id="${previewId}" data-tab-mode="preview">Preview</button>
+                    <button class="tab-btn" data-tab-id="${previewId}" data-tab-action="fullscreen" style="margin-left:auto;">⛶</button>
+                </div>
+                <div class="tab-panel" id="code-${previewId}">
+                    <pre><code>${escapeHtml(code)}</code></pre>
+                </div>
+                <div class="tab-panel" id="preview-${previewId}" style="display:none;"></div>
+            </div>`
+        });
+        return placeholder;
+    });
+    
+    // Extract python blocks
+    text = text.replace(/```python\n([\s\S]*?)```/g, (match, code) => {
+        const id = 'py-' + Math.random().toString(36).substr(2, 9);
+        const placeholder = `\x00CODEBLOCK_${codeBlocks.length}_\x00`;
+        codeBlocks.push({
+            type: 'python',
+            placeholder,
+            html: `<div class="code-block">
+                <button class="run-btn" data-python-run data-python-code="${encodeURIComponent(code)}" data-output-id="${id}">▶ Run</button>
+                <pre><code>${escapeHtml(code)}</code></pre>
+                <div class="code-output" id="${id}"></div>
+                <div class="pyodide-note">Available: numpy, pandas, scipy, matplotlib, scikit-learn, sympy, Pillow. No PyTorch or TensorFlow.</div>
+            </div>`
+        });
+        return placeholder;
+    });
+    
+    // Generic code blocks (catch-all, after specific ones)
+    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+        const placeholder = `\x00CODEBLOCK_${codeBlocks.length}_\x00`;
+        codeBlocks.push({
+            type: 'code',
+            placeholder,
+            html: `<pre><code>${escapeHtml(code)}</code></pre>`
+        });
+        return placeholder;
+    });
+    
+    // Now escape the remaining text
+    text = escapeHtml(text);
+    
+    // Restore code blocks
+    codeBlocks.forEach(block => {
+        text = text.replace(block.placeholder, block.html);
+    });
+    
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    
+    // Newlines
+    text = text.replace(/\n/g, '<br>');
+    
+    return text;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function extractStreamDelta(json) {
+    // OpenAI standard: choices[0].delta.content (string)
+    if (json.choices && Array.isArray(json.choices) && json.choices[0]) {
+        const delta = json.choices[0].delta;
+        if (delta) {
+            if (typeof delta.content === 'string') {
+                return delta.content;
+            }
+            // Kimi coding format: array of text parts
+            if (Array.isArray(delta.content)) {
+                return delta.content.map(item => item.text || '').join('');
+            }
+            if (typeof delta.text === 'string') {
+                return delta.text;
+            }
+        }
+    }
+    // Direct content array (Kimi style)
+    if (Array.isArray(json.content)) {
+        const text = json.content.map(item => item.text || '').join('');
+        if (text) return text;
+    }
+    // Kimi text_delta format: { type: "content_block_delta", delta: { type: "text_delta", text: "..." } }
+    if (json.delta && typeof json.delta.text === 'string') {
+        return json.delta.text;
+    }
+    // Direct text
+    if (typeof json.text === 'string') {
+        return json.text;
+    }
+    return '';
+}
+
+async function sendMessage() {
+    if (isSending || !currentConversation) return;
+    const input = document.getElementById('messageInput');
+    const content = input.value.trim();
+    if (!content) return;
+
+    // Handle /compact command — non-streaming
+    if (content.toLowerCase() === '/compact') {
+        input.value = ''; input.rows = 1;
+        isSending = true;
+        document.getElementById('sendBtn').disabled = true;
+        input.disabled = true;
+        showReplying();
+        try {
+            const res = await fetch(`${API_BASE}/api/conversations/${currentConversation}/compact`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+            hideReplying();
+            appendMessage('system', data.content || 'Conversation compacted.');
+            loadConversation(currentConversation);
+            loadConversations();
+        } catch (e) { hideReplying(); appendMessage('assistant', 'Error: Could not compact conversation.'); }
+        finally { isSending = false; document.getElementById('sendBtn').disabled = false; input.disabled = false; input.focus(); }
+        return;
+    }
+
+    // Optimistic: show user message immediately
+    const tempId = 'temp-' + Date.now();
+    input.value = ''; input.rows = 1;
+    appendMessage('user', content, tempId);
+    isSending = true;
+    document.getElementById('sendBtn').disabled = true;
+    input.disabled = true;
+    showReplying();
+
+    try {
+        const response = await fetch(`${API_BASE}/api/conversations/${currentConversation}/stream`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, model: 'kimi-k2.6', provider: 'kimi' })
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed: ${response.status} ${errorText}`);
+        }
+        
+        hideReplying();
+        
+        // Create streaming assistant message
+        const assistantId = 'streaming-' + Date.now();
+        const msgDiv = appendMessage('assistant', '', assistantId);
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // Parse SSE events
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';
+            
+            for (const event of events) {
+                const lines = event.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+                        
+                        try {
+                            const json = JSON.parse(data);
+                            const delta = extractStreamDelta(json);
+                            if (delta) {
+                                fullText += delta;
+                                // Update message with plain text during streaming
+                                const bubble = msgDiv.querySelector('.message-bubble');
+                                if (bubble) {
+                                    bubble.textContent = fullText;
+                                }
+                                // Scroll to bottom
+                                const container = document.getElementById('messagesContainer');
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch (e) {
+                            // Skip invalid JSON
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Apply formatting after stream is complete
+        const bubble = msgDiv.querySelector('.message-bubble');
+        if (bubble) {
+            bubble.innerHTML = formatContent(fullText);
+            if (localStorage.getItem('fontMode') === 'bionic') {
+                applyBionicToSingleMessage(msgDiv);
+            }
+        }
+        
+        // Remove the streaming ID to match normal messages
+        msgDiv.removeAttribute('id');
+    } catch (e) {
+        hideReplying();
+        appendMessage('assistant', 'Error: Could not get response. Please check your API key configuration.');
+    } finally {
+        isSending = false;
+        document.getElementById('sendBtn').disabled = false;
+        input.disabled = false;
+        input.focus();
+    }
+}
+
+const textarea = document.getElementById('messageInput');
+textarea.addEventListener('input', function() { this.rows = 1; const rows = Math.ceil(this.scrollHeight / 24); this.rows = Math.min(rows, 10); });
+
+// ─── Admin Dashboard ───
+function showAdminDashboard() { document.getElementById('adminDashboardModal').classList.remove('hidden'); switchAdminTab('pending'); }
+function closeAdminDashboard() { document.getElementById('adminDashboardModal').classList.add('hidden'); }
+function switchAdminTab(tab) {
+    currentAdminTab = tab;
+    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', roadmaps: 'adminRoadmaps', metrics: 'adminMetrics' };
+    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'roadmaps', 'metrics'];
+    tabIds.forEach(t => {
+        const btn = document.getElementById('adminTab' + t.charAt(0).toUpperCase() + t.slice(1));
+        const content = document.getElementById(tabMap[t]);
+        if (btn) btn.classList.toggle('active', t === tab);
+        if (content) content.classList.toggle('hidden', t !== tab);
+    });
+    // Always hide the chat view sub-panel when switching main tabs
+    document.getElementById('adminChatView').classList.add('hidden');
+    if (tab === 'pending') loadAdminPending();
+    if (tab === 'all') loadAdminUsers();
+    if (tab === 'grid') loadAdminGrid();
+    if (tab === 'chats') loadAdminUserChats();
+    if (tab === 'userPrompts') loadAdminUserPrompts();
+    if (tab === 'prompts') loadAdminSystemPrompts();
+    if (tab === 'roadmaps') loadRoadmaps();
+    if (tab === 'metrics') loadMetrics();
+}
+
+async function loadAdminPending() {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users/pending`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const container = document.getElementById('adminPending');
+        if (!data.users || data.users.length === 0) { container.innerHTML = '<p style="color:var(--text-tertiary)">No pending approvals</p>'; return; }
+        container.innerHTML = data.users.map(u => `
+            <div class="user-card">
+                <h4>${escapeHtml(u.display_name || u.username)}</h4>
+                <p>@${escapeHtml(u.username)} • ${u.role}</p>
+                <button class="action-btn approve" onclick="approveUser('${u.user_id}')">Approve</button>
+                <button class="action-btn reject" onclick="rejectUser('${u.user_id}')">Reject</button>
+            </div>
+        `).join('');
+    } catch (e) { document.getElementById('adminPending').innerHTML = '<p class="error">Failed to load</p>'; }
+}
+
+async function loadAdminUsers() {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const container = document.getElementById('adminAllUsers');
+        if (!data.users || data.users.length === 0) { container.innerHTML = '<p style="color:var(--text-tertiary)">No users</p>'; return; }
+        container.innerHTML = data.users.map(u => `
+            <div class="user-card">
+                <h4>${escapeHtml(u.display_name || u.username)}</h4>
+                <p>@${escapeHtml(u.username)} • ${u.role} • ${u.approval_status}</p>
+            </div>
+        `).join('');
+    } catch (e) { document.getElementById('adminAllUsers').innerHTML = '<p class="error">Failed to load</p>'; }
+}
+
+async function loadAdminGrid() {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const container = document.getElementById('adminGrid');
+        if (!data.users || data.users.length === 0) { container.innerHTML = '<p style="color:var(--text-tertiary)">No users</p>'; return; }
+        container.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">' + data.users.map(u => `
+            <div class="user-card" style="border-left:4px solid ${u.approval_status === 'approved' ? 'var(--accent-teal)' : 'var(--accent-cadmium)'};">
+                <h4>${escapeHtml(u.display_name || u.username)}</h4>
+                <p>@${escapeHtml(u.username)}</p>
+                <p style="font-size:12px">${u.role} • ${u.approval_status}</p>
+                ${u.approval_status === 'pending' ? `<button class="action-btn approve" onclick="approveUser('${u.user_id}')">Approve</button>` : ''}
+            </div>
+        `).join('') + '</div>';
+    } catch (e) { document.getElementById('adminGrid').innerHTML = '<p class="error">Failed to load</p>'; }
+}
+
+async function approveUser(id) {
+    try { await fetch(`${API_BASE}/api/admin/users/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminPending(); if (currentAdminTab === 'all') loadAdminUsers(); if (currentAdminTab === 'grid') loadAdminGrid(); } catch (e) {}
+}
+
+async function rejectUser(id) {
+    try { await fetch(`${API_BASE}/api/admin/users/${id}/reject`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminPending(); } catch (e) {}
+}
+
+async function loadAdminUserChats() {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const container = document.getElementById('adminUserChats');
+        if (!data.users || data.users.length === 0) { container.innerHTML = '<p style="color:var(--text-tertiary)">No users</p>'; return; }
+        container.innerHTML = data.users.map(u => `
+            <div class="user-card" onclick="loadUserChats('${u.user_id}')" style="cursor:pointer;">
+                <h4>${escapeHtml(u.display_name || u.username)}</h4>
+                <p>@${escapeHtml(u.username)} • Click to view chats</p>
+            </div>
+        `).join('');
+    } catch (e) { document.getElementById('adminUserChats').innerHTML = '<p class="error">Failed to load</p>'; }
+}
+
+async function loadUserChats(userId) {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users/${userId}/conversations`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) {
+            console.error('Failed to load user chats:', res.status, await res.text());
+            document.getElementById('adminUserChats').innerHTML = '<button class="action-btn" onclick="backToAdminUsers()">← Back to Users</button><p class="error" style="margin-top:12px;">Failed to load conversations (error ' + res.status + ')</p>';
+            return;
+        }
+        const data = await res.json();
+        const container = document.getElementById('adminUserChats');
+        if (!data.conversations || data.conversations.length === 0) {
+            container.innerHTML = '<button class="action-btn" onclick="backToAdminUsers()">← Back to Users</button><p style="color:var(--text-tertiary);margin-top:12px;">No conversations found for this user.</p>';
+            return;
+        }
+        container.innerHTML = '<button class="action-btn" onclick="backToAdminUsers()" style="margin-bottom:12px;">← Back to Users</button><h3 style="margin-bottom:12px;font-size:16px;">Conversations</h3>' + data.conversations.map(conv => `
+            <div class="user-card" onclick="viewAdminConversation('${conv.id}', '${escapeHtml(conv.title || 'Untitled')}')" style="cursor:pointer;">
+                <div style="display:flex;align-items:center;gap:12px;">
+                    <div style="width:36px;height:36px;border-radius:50%;background:${conv.color || '#2a7f7f'};display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:14px;">${(conv.title || 'C')[0]}</div>
+                    <div style="flex:1;">
+                        <h4>${escapeHtml(conv.title || 'Untitled')}</h4>
+                        <p style="font-size:12px;color:var(--text-tertiary);">${conv.message_count || 0} messages • ${new Date(conv.created_at).toLocaleDateString()}</p>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    } catch (e) { document.getElementById('adminUserChats').innerHTML = '<p class="error">Failed to load conversations</p>'; }
+}
+
+function backToAdminUsers() { loadAdminUserChats(); }
+
+async function viewAdminConversation(convId, title) {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/conversations/${convId}/messages`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const container = document.getElementById('adminChatView');
+        const msgContainer = document.getElementById('adminMessagesContainer');
+        document.getElementById('adminChatViewTitle').textContent = title || 'Conversation';
+        document.getElementById('adminChatViewMeta').textContent = `${data.messages ? data.messages.length : 0} messages`;
+        msgContainer.innerHTML = '';
+        if (!data.messages || data.messages.length === 0) {
+            msgContainer.innerHTML = '<p style="color:var(--text-tertiary);text-align:center;">No messages in this conversation.</p>';
+        } else {
+            data.messages.forEach(msg => {
+                const div = document.createElement('div');
+                div.className = `message ${msg.role}`;
+                div.style.maxWidth = '90%';
+                div.innerHTML = formatMessageHTML(msg.role, msg.content);
+                msgContainer.appendChild(div);
+            });
+        }
+        // Switch tabs
+        document.querySelectorAll('.admin-content').forEach(el => el.classList.add('hidden'));
+        document.getElementById('adminChatView').classList.remove('hidden');
+        document.querySelectorAll('.admin-tab').forEach(el => el.classList.remove('active'));
+    } catch (e) {
+        document.getElementById('adminMessagesContainer').innerHTML = '<p class="error">Failed to load messages.</p>';
+    }
+}
+
+function backToUserChats() {
+    document.getElementById('adminChatView').classList.add('hidden');
+    document.getElementById('adminUserChats').classList.remove('hidden');
+    document.getElementById('adminTabChats').classList.add('active');
+}
+
+function backToAdminUsers() {
+    loadAdminUserChats();
+}
+
+async function loadAdminUserPrompts() {
+    const container = document.getElementById('adminUserPrompts');
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const users = data.users || [];
+        let html = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="font-size:16px;">User Prompts</h3>
+                <p style="color:var(--text-secondary);font-size:13px;">Set per-user prompts that complement the system prompt</p>
+            </div>
+        `;
+        if (users.length === 0) {
+            html += '<p style="color:var(--text-tertiary)">No users found</p>';
+        } else {
+            html += users.map(u => `
+                <div class="user-card" style="position:relative;">
+                    <div style="display:flex;justify-content:space-between;align-items:start;">
+                        <div>
+                            <h4>${escapeHtml(u.display_name || u.username)}</h4>
+                            <p style="font-size:13px;color:var(--text-tertiary);">@${escapeHtml(u.username)} • ${u.role}</p>
+                        </div>
+                        <button class="btn-small" onclick="editUserPrompt('${u.user_id}', '${escapeHtml(u.display_name || u.username)}')">Edit Prompt</button>
+                    </div>
+                    <div id="userPrompt-${u.user_id}" style="margin-top:8px;font-size:13px;color:var(--text-secondary);font-style:italic;">
+                        Loading...
+                    </div>
+                </div>
+            `).join('');
+        }
+        container.innerHTML = html;
+        // Load prompts for each user
+        users.forEach(u => loadUserPromptPreview(u.user_id));
+    } catch (e) { container.innerHTML = '<p class="error">Failed to load users</p>'; }
+}
+
+async function loadUserPromptPreview(userId) {
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/users/${userId}/system-prompt`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const el = document.getElementById(`userPrompt-${userId}`);
+        if (el) {
+            const prompt = data.system_prompt;
+            el.dataset.fullPrompt = prompt || '';
+            el.innerHTML = prompt ? `Current: ${escapeHtml(prompt.slice(0, 100))}${prompt.length > 100 ? '...' : ''}` : 'No user prompt set (using global system prompt only)';
+            el.style.color = prompt ? 'var(--text-secondary)' : 'var(--text-tertiary)';
+            el.style.fontStyle = prompt ? 'normal' : 'italic';
+        }
+    } catch (e) {
+        const el = document.getElementById(`userPrompt-${userId}`);
+        if (el) el.innerHTML = 'Error loading prompt';
+    }
+}
+
+function editUserPrompt(userId, userName) {
+    const el = document.getElementById(`userPrompt-${userId}`);
+    if (!el) return;
+    const currentPrompt = el.dataset.fullPrompt || '';
+
+    // Build a modal for editing
+    let modal = document.getElementById('userPromptModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'userPromptModal';
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal" style="width:500px;max-width:90vw;">
+                <h3 style="font-size:18px;margin-bottom:16px;">Edit User Prompt — <span id="userPromptModalName"></span></h3>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">This prompt complements the global system prompt for this user only.</p>
+                <div class="form-group">
+                    <textarea id="userPromptModalInput" rows="6" placeholder="Enter user prompt..." style="width:100%;padding:10px 12px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit;resize:vertical;"></textarea>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:16px;">
+                    <button class="btn-small" onclick="submitUserPromptFromModal()">Save</button>
+                    <button class="btn-small secondary" onclick="closeUserPromptModal()">Cancel</button>
+                    <button class="btn-small danger" id="userPromptModalClearBtn" onclick="clearUserPromptFromModal()">Clear</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    document.getElementById('userPromptModalName').textContent = userName;
+    document.getElementById('userPromptModalInput').value = currentPrompt;
+    document.getElementById('userPromptModalClearBtn').style.display = currentPrompt ? 'inline-block' : 'none';
+    modal.dataset.userId = userId;
+    modal.classList.remove('hidden');
+}
+
+function closeUserPromptModal() {
+    const modal = document.getElementById('userPromptModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function submitUserPromptFromModal() {
+    const modal = document.getElementById('userPromptModal');
+    if (!modal) return;
+    const userId = modal.dataset.userId;
+    const prompt = document.getElementById('userPromptModalInput').value.trim() || null;
+    saveUserPrompt(userId, prompt);
+    closeUserPromptModal();
+}
+
+function clearUserPromptFromModal() {
+    const modal = document.getElementById('userPromptModal');
+    if (!modal) return;
+    const userId = modal.dataset.userId;
+    if (!confirm('Clear this user prompt?')) return;
+    saveUserPrompt(userId, null);
+    closeUserPromptModal();
+}
+
+async function saveUserPrompt(userId, prompt) {
+    try {
+        await fetch(`${API_BASE}/api/admin/users/${userId}/system-prompt`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ system_prompt: prompt })
+        });
+        loadUserPromptPreview(userId);
+    } catch (e) { alert('Failed to save user prompt'); }
+}
+async function loadAdminSystemPrompts() {
+    const container = document.getElementById('adminPrompts');
+    try {
+        const res = await fetch(`${API_BASE}/api/admin/system-prompts`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        const prompts = data.prompts || [];
+        let html = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="font-size:16px;">System Prompts</h3>
+                <button class="btn-small" onclick="showCreateSystemPrompt()">+ New Prompt</button>
+            </div>
+            <div id="createSystemPromptForm" class="hidden" style="border:var(--line-weight) solid var(--border);padding:16px;border-radius:var(--radius);margin-bottom:16px;background:white;">
+                <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Name</label><input id="systemPromptName" placeholder="e.g. Friendly Assistant" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;"></div>
+                <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Content</label><textarea id="systemPromptContent" placeholder="Enter system prompt..." rows="4" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit;"></textarea></div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-small" onclick="createSystemPrompt()">Create</button>
+                    <button class="btn-small secondary" onclick="document.getElementById('createSystemPromptForm').classList.add('hidden')">Cancel</button>
+                </div>
+            </div>
+        `;
+        if (prompts.length === 0) {
+            html += '<p style="color:var(--text-tertiary)">No system prompts yet. Create one to set a global personality.</p>';
+        } else {
+            html += prompts.map(p => `
+                <div class="roadmap-card" style="position:relative;">
+                    <div style="display:flex;justify-content:space-between;align-items:start;">
+                        <div>
+                            <h3>${escapeHtml(p.name)} ${p.is_active ? '<span class="badge active">Active</span>' : ''}</h3>
+                            <p style="font-size:13px;color:var(--text-secondary);margin-top:4px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(p.content).slice(0, 200)}${p.content.length > 200 ? '...' : ''}</p>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            ${!p.is_active ? `<button class="btn-small" onclick="activateSystemPrompt('${p.id}')">Activate</button>` : ''}
+                            <button class="btn-small danger" onclick="deleteSystemPrompt('${p.id}')">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<p class="error">Failed to load system prompts</p>'; }
+}
+
+function showCreateSystemPrompt() { document.getElementById('createSystemPromptForm').classList.remove('hidden'); }
+
+async function createSystemPrompt() {
+    const name = document.getElementById('systemPromptName').value.trim();
+    const content = document.getElementById('systemPromptContent').value.trim();
+    if (!name || !content) return;
+    try {
+        await fetch(`${API_BASE}/api/admin/system-prompts`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, content }) });
+        document.getElementById('systemPromptName').value = '';
+        document.getElementById('systemPromptContent').value = '';
+        loadAdminSystemPrompts();
+    } catch (e) {}
+}
+
+async function activateSystemPrompt(id) {
+    try { await fetch(`${API_BASE}/api/admin/system-prompts/${id}/activate`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminSystemPrompts(); } catch (e) {}
+}
+
+async function deleteSystemPrompt(id) {
+    if (!confirm('Delete this system prompt?')) return;
+    try { await fetch(`${API_BASE}/api/admin/system-prompts/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminSystemPrompts(); } catch (e) {}
+}
+
+async function loadRoadmaps() {
+    const container = document.getElementById('adminRoadmaps');
+    try {
+        const res = await fetch(`${API_BASE}/api/roadmaps`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const roadmaps = data.roadmaps || [];
+        let html = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="font-size:16px;">Roadmaps</h3>
+                <button class="btn-small" onclick="showCreateRoadmap()">+ New Roadmap</button>
+            </div>
+            <div id="createRoadmapForm" class="hidden" style="border:var(--line-weight) solid var(--border);padding:16px;border-radius:var(--radius);margin-bottom:16px;background:white;">
+                <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Name</label><input id="roadmapName" placeholder="e.g. Introduction to Python" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;"></div>
+                <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Description</label><textarea id="roadmapDesc" placeholder="What students will learn..." rows="2" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit;"></textarea></div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-small" onclick="createRoadmap()">Create</button>
+                    <button class="btn-small secondary" onclick="document.getElementById('createRoadmapForm').classList.add('hidden')">Cancel</button>
+                </div>
+            </div>
+        `;
+        if (roadmaps.length === 0) {
+            html += '<p style="color:var(--text-tertiary)">No roadmaps yet. Create one to start tracking student progress.</p>';
+        } else {
+            html += roadmaps.map(r => `
+                <div class="roadmap-card">
+                    <div style="display:flex;justify-content:space-between;align-items:start;">
+                        <div>
+                            <h3>${escapeHtml(r.name)}</h3>
+                            <p>${escapeHtml(r.description || '')}</p>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            ${r.is_active ? '<span class="badge active">Active</span>' : '<button class="btn-small secondary" onclick="activateRoadmap(\'' + r.id + '\')">Set Active</button>'}
+                            <button class="btn-small danger" onclick="deleteRoadmap('\'' + r.id + '\')">Delete</button>
+                        </div>
+                    </div>
+                    <div style="margin-top:12px;">
+                        <button class="btn-small secondary" onclick="showAddTopic('${r.id}')">+ Add Topic</button>
+                        <div id="topicForm-${r.id}" class="hidden" style="margin-top:8px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);">
+                            <div class="form-inline"><input id="topicTitle-${r.id}" placeholder="Topic title" style="flex:1;"><input id="topicOrder-${r.id}" type="number" value="0" placeholder="Order" style="width:60px;"></div>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn-small" onclick="createTopic('${r.id}')">Add Topic</button>
+                                <button class="btn-small secondary" onclick="document.getElementById('topicForm-${r.id}').classList.add('hidden')">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                    ${r.topics && r.topics.length > 0 ? r.topics.map((t, ti) => `
+                        <div class="topic-block">
+                            <h4>${escapeHtml(t.title)}</h4>
+                            <p style="font-size:12px;color:var(--text-tertiary);">${escapeHtml(t.description || '')}</p>
+                            <button class="btn-small secondary" style="font-size:11px;padding:4px 8px;" onclick="showAddLesson('${t.id}')">+ Add Lesson</button>
+                            <div id="lessonForm-${t.id}" class="hidden" style="margin-top:8px;padding:10px;background:var(--bg-primary);border-radius:var(--radius);">
+                                <div class="form-inline"><input id="lessonTitle-${t.id}" placeholder="Lesson title" style="flex:1;"><input id="lessonOrder-${t.id}" type="number" value="${ti}" placeholder="Order" style="width:60px;"></div>
+                                <div class="form-inline"><textarea id="lessonDesc-${t.id}" placeholder="Description" rows="1" style="flex:1;font-family:inherit;"></textarea></div>
+                                <div class="form-inline"><textarea id="lessonCriteria-${t.id}" placeholder="Completion criteria" rows="1" style="flex:1;font-family:inherit;"></textarea></div>
+                                <div style="display:flex;gap:8px;">
+                                    <button class="btn-small" style="font-size:11px;padding:4px 8px;" onclick="createLesson('${t.id}')">Add Lesson</button>
+                                    <button class="btn-small secondary" style="font-size:11px;padding:4px 8px;" onclick="document.getElementById('lessonForm-${t.id}').classList.add('hidden')">Cancel</button>
+                                </div>
+                            </div>
+                            <div class="lesson-list">
+                                ${t.lessons && t.lessons.length > 0 ? t.lessons.map(l => `
+                                    <div class="lesson-item">
+                                        <span style="font-size:11px;color:var(--text-tertiary);">${l.order_index}.</span>
+                                        <span style="flex:1;">${escapeHtml(l.title)}</span>
+                                        <span style="font-size:11px;color:var(--text-tertiary);">${escapeHtml(l.description || '').slice(0, 40)}</span>
+                                    </div>
+                                `).join('') : '<p style="font-size:12px;color:var(--text-tertiary);padding:4px 0;">No lessons yet</p>'}
+                            </div>
+                        </div>
+                    `).join('') : '<p style="font-size:13px;color:var(--text-tertiary);margin-top:8px;">No topics yet</p>'}
+                </div>
+            `).join('');
+        }
+        container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<p class="error">Failed to load roadmaps</p>'; }
+}
+
+function showCreateRoadmap() { document.getElementById('createRoadmapForm').classList.remove('hidden'); }
+
+async function createRoadmap() {
+    const name = document.getElementById('roadmapName').value.trim();
+    const desc = document.getElementById('roadmapDesc').value.trim() || null;
+    if (!name) return;
+    try {
+        await fetch(`${API_BASE}/api/roadmaps`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description: desc }) });
+        document.getElementById('roadmapName').value = '';
+        document.getElementById('roadmapDesc').value = '';
+        loadRoadmaps();
+    } catch (e) {}
+}
+
+async function activateRoadmap(id) {
+    try { await fetch(`${API_BASE}/api/roadmaps/${id}/activate`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); loadRoadmaps(); } catch (e) {}
+}
+
+async function deleteRoadmap(id) {
+    if (!confirm('Delete this roadmap? This will also remove all topics and lessons.')) return;
+    try { await fetch(`${API_BASE}/api/roadmaps/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); loadRoadmaps(); } catch (e) {}
+}
+
+function showAddTopic(roadmapId) { document.getElementById(`topicForm-${roadmapId}`).classList.remove('hidden'); }
+
+async function createTopic(roadmapId) {
+    const title = document.getElementById(`topicTitle-${roadmapId}`).value.trim();
+    const order = parseInt(document.getElementById(`topicOrder-${roadmapId}`).value) || 0;
+    if (!title) return;
+    try {
+        await fetch(`${API_BASE}/api/roadmaps/${roadmapId}/topics`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title, order_index: order }) });
+        document.getElementById(`topicTitle-${roadmapId}`).value = '';
+        loadRoadmaps();
+    } catch (e) {}
+}
+
+function showAddLesson(topicId) { document.getElementById(`lessonForm-${topicId}`).classList.remove('hidden'); }
+
+async function createLesson(topicId) {
+    const title = document.getElementById(`lessonTitle-${topicId}`).value.trim();
+    const order = parseInt(document.getElementById(`lessonOrder-${topicId}`).value) || 0;
+    const desc = document.getElementById(`lessonDesc-${topicId}`).value.trim() || null;
+    const criteria = document.getElementById(`lessonCriteria-${topicId}`).value.trim() || null;
+    if (!title) return;
+    try {
+        await fetch(`${API_BASE}/api/topics/${topicId}/lessons`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title, order_index: order, description: desc, completion_criteria: criteria }) });
+        document.getElementById(`lessonTitle-${topicId}`).value = '';
+        document.getElementById(`lessonDesc-${topicId}`).value = '';
+        document.getElementById(`lessonCriteria-${topicId}`).value = '';
+        loadRoadmaps();
+    } catch (e) {}
+}
+
+async function loadMetrics() {
+    const container = document.getElementById('adminMetrics');
+    try {
+        const [metricsRes, usersRes] = await Promise.all([
+            fetch(`${API_BASE}/api/metrics`, { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch(`${API_BASE}/api/admin/users`, { headers: { 'Authorization': `Bearer ${token}` } })
+        ]);
+        if (!metricsRes.ok || !usersRes.ok) throw new Error();
+        const metricsData = await metricsRes.json();
+        const usersData = await usersRes.json();
+        const metrics = metricsData.metrics || [];
+        const users = usersData.users || [];
+        const totalStudents = users.filter(u => u.role === 'student').length;
+        const totalTeachers = users.filter(u => u.role === 'teacher').length;
+        const totalMessages = metrics.reduce((s, m) => s + (m.total_messages || 0), 0);
+        const activeToday = metrics.filter(m => (m.messages_today || 0) > 0).length;
+        let html = '<h3 style="margin-bottom:16px;font-size:16px;">Metrics Dashboard</h3>';
+        html += `
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px;">
+                <div class="metric-card"><div><div class="metric-label">Total Students</div><div class="metric-value">${totalStudents}</div></div></div>
+                <div class="metric-card"><div><div class="metric-label">Total Teachers</div><div class="metric-value">${totalTeachers}</div></div></div>
+                <div class="metric-card"><div><div class="metric-label">Total Messages</div><div class="metric-value">${totalMessages}</div></div></div>
+                <div class="metric-card"><div><div class="metric-label">Active Today</div><div class="metric-value">${activeToday}</div></div></div>
+            </div>
+            <h4 style="font-size:14px;margin-bottom:12px;">Student Activity</h4>
+        `;
+        if (metrics.length === 0) {
+            html += '<p style="color:var(--text-tertiary)">No activity data yet. Students need to send messages for metrics to appear.</p>';
+        } else {
+            html += metrics.map(m => {
+                const user = users.find(u => u.user_id === m.user_id) || {};
+                const pct = Math.round((m.total_messages || 0) / (totalMessages || 1) * 100);
+                return `
+                    <div class="metric-card" style="display:block;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-size:14px;font-weight:600;">${escapeHtml(user.display_name || user.username || m.user_id)}</div>
+                                <div class="metric-label">${m.total_messages || 0} messages total • ${m.messages_today || 0} today</div>
+                            </div>
+                            <div class="metric-value" style="font-size:18px;">${pct}%</div>
+                        </div>
+                        <div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+                        ${m.last_active ? `<div class="metric-label" style="margin-top:4px;">Last active: ${new Date(m.last_active).toLocaleString()}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<p class="error">Failed to load metrics</p>'; }
+}
+
+// ─── Init ───
+document.getElementById('adminBtn').onclick = showAdminDashboard;
+</script>
+</body>
+</html>

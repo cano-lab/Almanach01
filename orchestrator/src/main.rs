@@ -1,0 +1,148 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
+mod api;
+mod auth;
+mod chat_db;
+mod config;
+mod roadmap;
+mod roadmap_api;
+mod teams;
+
+use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
+use axum::{
+    routing::{get, post, delete, patch},
+    Router,
+    extract::Path,
+};
+use tokio::sync::RwLock;
+use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::services::ServeDir;
+
+use crate::auth::AuthManager;
+use crate::chat_db::ChatDb;
+
+pub struct AppState {
+    pub config: config::Config,
+    pub teams: teams::TeamRegistry,
+    pub api_keys: RwLock<HashMap<String, String>>,
+    pub data_dir: std::path::PathBuf,
+    pub auth: RwLock<AuthManager>,
+    pub chat_db: Arc<ChatDb>,
+}
+
+fn load_api_keys(data_dir: &std::path::Path) -> HashMap<String, String> {
+    let keys_path = data_dir.join("api_keys.json");
+    if keys_path.exists() {
+        if let Ok(contents) = std::fs::read_to_string(&keys_path) {
+            if let Ok(keys) = serde_json::from_str(&contents) {
+                return keys;
+            }
+        }
+    }
+    HashMap::new()
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.contains(&"--set-password".to_string()) {
+        let data_dir = std::path::PathBuf::from("./data");
+        auth::cli_set_password(&data_dir)?;
+        return Ok(());
+    }
+
+    tracing_subscriber::fmt()
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
+        .init();
+
+    let config = config::load()?;
+    let data_dir = std::path::PathBuf::from("./data");
+    std::fs::create_dir_all(&data_dir).ok();
+    tracing::info!("Loaded config: {:?}", config);
+
+    let auth_manager = AuthManager::new(&data_dir)?;
+    if !auth_manager.has_admin() {
+        tracing::warn!("⚠️  No admin password set. Use --set-password to set one.");
+    }
+
+    let api_keys = load_api_keys(&data_dir);
+    let chat_db = Arc::new(ChatDb::open(&data_dir.join("chat.db"))?);
+
+    let state = Arc::new(AppState {
+        config: config.clone(),
+        teams: teams::TeamRegistry::new(&data_dir)?,
+        api_keys: RwLock::new(api_keys),
+        data_dir: data_dir.clone(),
+        auth: RwLock::new(auth_manager),
+        chat_db,
+    });
+
+    let app = Router::new()
+        .route("/health", get(api::health))
+        .route("/api/me", get(auth::me))
+        .route("/auth/me", get(auth::me))
+        .route("/auth/login", post(api::login))
+        .route("/auth/user/login", post(auth::user_login))
+        .route("/auth/register", post(api::register))
+        .route("/auth/user/register", post(auth::user_register))
+        .route("/auth/refresh", post(api::refresh_token))
+        .route("/api/keys", get(api::list_api_keys).post(api::set_api_key))
+        .route("/api/keys/:provider", delete(api::delete_api_key))
+        .route("/api/conversations", get(api::list_conversations).post(api::create_conversation))
+        .route("/api/conversations/:id", get(api::get_conversation).delete(api::delete_conversation))
+        .route("/api/conversations/:id/messages", get(api::get_messages).post(api::send_message))
+        .route("/api/conversations/:id/stream", post(api::stream_conversation))
+        .route("/api/conversations/:id/compact", post(api::compact_conversation))
+        .route("/api/conversations/:id", patch(api::update_conversation))
+        .route("/api/conversations/:id/system-prompt", post(api::set_conversation_system_prompt))
+        .route("/api/system-prompts/templates", get(api::list_system_prompt_templates))
+        .route("/api/courses", get(api::list_courses))
+        .route("/api/courses/:id", get(api::get_course))
+        .route("/api/courses/:id/enroll", post(api::enroll_course))
+        .route("/api/enrollments", get(api::list_enrollments))
+        .route("/api/lessons/:id/start", post(api::start_lesson))
+        .route("/api/chat/stream", post(api::chat_stream))
+        .route("/api/teams", get(api::list_teams))
+        .route("/api/teams/:id/roles", get(api::list_team_roles))
+        .route("/api/admin/users", get(auth::admin_list_users))
+        .route("/api/admin/users/pending", get(auth::admin_pending_users))
+        .route("/api/admin/approve-user", post(auth::admin_approve_user))
+        .route("/api/admin/create-user", post(auth::admin_create_user))
+        .route("/api/admin/users/:id/conversations", get(auth::admin_list_user_conversations))
+        .route("/api/admin/users/:id/system-prompt", get(auth::admin_get_user_system_prompt).post(auth::admin_set_user_system_prompt))
+        .route("/api/admin/conversations/:id/messages", get(auth::admin_get_conversation_messages))
+        .route("/api/admin/system-prompts", get(auth::admin_list_system_prompts).post(auth::admin_create_system_prompt))
+        .route("/api/admin/system-prompts/:id/activate", post(auth::admin_activate_system_prompt))
+        .route("/api/admin/system-prompts/:id", delete(auth::admin_delete_system_prompt))
+        .route("/api/roadmaps", get(roadmap_api::list_roadmaps).post(roadmap_api::create_roadmap))
+        .route("/api/roadmaps/:id", get(roadmap_api::get_roadmap).delete(roadmap_api::delete_roadmap))
+        .route("/api/roadmaps/:id/activate", post(roadmap_api::set_active_roadmap))
+        .route("/api/roadmaps/:id/topics", post(roadmap_api::create_topic))
+        .route("/api/topics/:id/lessons", post(roadmap_api::create_lesson))
+        .route("/api/progress/:user_id", get(roadmap_api::get_student_progress))
+        .route("/api/progress/:user_id/:lesson_id", post(roadmap_api::update_lesson_progress))
+        .route("/api/metrics", get(roadmap_api::get_user_metrics))
+        .route("/api/active-roadmap", get(roadmap_api::get_active_roadmap))
+        .route("/ws/chat", get(api::chat_websocket))
+        .fallback_service(ServeDir::new("./static-site"))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(AllowOrigin::any())
+                .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    header::AUTHORIZATION,
+                    HeaderName::from_static("x-secret-word"),
+                ]),
+        )
+        .with_state(state.clone());
+
+    let addr = format!("0.0.0.0:{}", config.port);
+    tracing::info!("🚀 Claw Pen Chat Server running on http://{}", addr);
+
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
