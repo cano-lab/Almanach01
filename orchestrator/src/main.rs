@@ -103,8 +103,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/enrollments", get(api::list_enrollments))
         .route("/api/lessons/:id/start", post(api::start_lesson))
         .route("/api/chat/stream", post(api::chat_stream))
-        .route("/api/teams", get(api::list_teams))
-        .route("/api/teams/:id/roles", get(api::list_team_roles))
         .route("/api/admin/users", get(auth::admin_list_users))
         .route("/api/admin/users/pending", get(auth::admin_pending_users))
         .route("/api/admin/approve-user", post(auth::admin_approve_user))
@@ -139,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state.clone());
 
     let addr = format!("0.0.0.0:{}", config.port);
-    tracing::info!("🚀 Claw Pen Chat Server running on http://{}", addr);
+    tracing::info!("🚀 Almanach Server running on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

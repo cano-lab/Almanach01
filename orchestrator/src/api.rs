@@ -1102,21 +1102,6 @@ async fn handle_chat_ws(
     }
 }
 
-// === Teams ===
-
-pub async fn list_teams(State(state): State<Arc<AppState>>) -> Json<Vec<serde_json::Value>> {
-    let teams = state.teams.list_teams();
-    Json(teams)
-}
-
-pub async fn list_team_roles(
-    State(state): State<Arc<AppState>>,
-    Path(id): Path<String>,
-) -> Json<Vec<serde_json::Value>> {
-    let roles = state.teams.list_roles(&id);
-    Json(roles)
-}
-
 // === Admin ===
 
 pub async fn list_users(
