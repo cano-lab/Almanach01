@@ -1501,6 +1501,29 @@ pub fn add_message(
         })
     }
 
+    pub fn get_enrollment_progress(&self, enrollment_id: &str) -> Result<Vec<LessonProgress>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, enrollment_id, lesson_id, status, started_at, completed_at, last_activity_at
+             FROM lesson_progress WHERE enrollment_id = ?1
+             ORDER BY last_activity_at DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![enrollment_id], |row| {
+                Ok(LessonProgress {
+                    id: row.get(0)?,
+                    enrollment_id: row.get(1)?,
+                    lesson_id: row.get(2)?,
+                    status: row.get(3)?,
+                    started_at: row.get(4).ok(),
+                    completed_at: row.get(5).ok(),
+                    last_activity_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn create_lesson_conversation(&self, user_id: &str, lesson_id: &str, title: &str, system_prompt: &str) -> Result<ChatConversation> {
         let colors = ["#2a7f7f", "#b85c38", "#d4a843", "#5a7a5a", "#8a6a8a"];
         let color = colors[uuid::Uuid::new_v4().as_u128() as usize % colors.len()];

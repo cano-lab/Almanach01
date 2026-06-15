@@ -1381,3 +1381,134 @@ pub async fn start_lesson(
         "title": lesson.title,
     })))
 }
+
+// ─── Additional Course Endpoints ───────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct UpdateProgressRequest {
+    pub enrollment_id: String,
+    pub lesson_id: String,
+    pub status: String, // "not_started", "in_progress", "completed"
+}
+
+pub async fn get_module_lessons(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let lessons = state.chat_db.get_module_lessons(&id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "lessons": lessons.into_iter().map(|l| serde_json::json!({
+            "id": l.id,
+            "title": l.title,
+            "title_en": l.title_en,
+            "description": l.description,
+            "estimated_minutes": l.estimated_minutes,
+            "order": l.order_index,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+pub async fn get_lesson_detail(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let lesson = match state.chat_db.get_lesson(&id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
+        Some(l) => l,
+        None => return Err((StatusCode::NOT_FOUND, "Lesson not found".to_string())),
+    };
+
+    Ok(Json(serde_json::json!({
+        "id": lesson.id,
+        "title": lesson.title,
+        "title_en": lesson.title_en,
+        "description": lesson.description,
+        "topics": lesson.topics,
+        "objectives": lesson.objectives,
+        "estimated_minutes": lesson.estimated_minutes,
+        "keywords": lesson.keywords,
+        "order": lesson.order_index,
+    })))
+}
+
+pub async fn update_progress(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(req): Json<UpdateProgressRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let token = extract_token(&headers)?;
+    let auth = state.auth.read().await;
+    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+    drop(auth);
+
+    let valid_status = matches!(req.status.as_str(), "not_started" | "in_progress" | "completed");
+    if !valid_status {
+        return Err((StatusCode::BAD_REQUEST, "Invalid status. Use: not_started, in_progress, completed".to_string()));
+    }
+
+    let progress = state.chat_db.update_course_lesson_progress(&req.enrollment_id, &req.lesson_id, &req.status)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "id": progress.id,
+        "enrollment_id": progress.enrollment_id,
+        "lesson_id": progress.lesson_id,
+        "status": progress.status,
+        "started_at": progress.started_at,
+        "completed_at": progress.completed_at,
+    })))
+}
+
+pub async fn get_enrollment_progress(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let token = extract_token(&headers)?;
+    let auth = state.auth.read().await;
+    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+    drop(auth);
+
+    let progress = state.chat_db.get_enrollment_progress(&id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "enrollment_id": id,
+        "progress": progress.into_iter().map(|p| serde_json::json!({
+            "id": p.id,
+            "lesson_id": p.lesson_id,
+            "status": p.status,
+            "started_at": p.started_at,
+            "completed_at": p.completed_at,
+            "last_activity_at": p.last_activity_at,
+        })).collect::<Vec<_>>(),
+    })))
+}
+
+pub async fn get_lesson_chat(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let token = extract_token(&headers)?;
+    let auth = state.auth.read().await;
+    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+    drop(auth);
+
+    let conv = state.chat_db.get_conversation_by_lesson(&claims.sub, &id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    match conv {
+        Some(c) => Ok(Json(serde_json::json!({
+            "has_chat": true,
+            "conversation_id": c.id,
+            "title": c.title,
+        }))),
+        None => Ok(Json(serde_json::json!({
+            "has_chat": false,
+            "conversation_id": null,
+        }))),
+    }
+}
