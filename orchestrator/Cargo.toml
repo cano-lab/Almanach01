@@ -61,3 +61,15 @@ reqwest = { version = "0.11", features = ["json"] }
 # Code indexing dependencies
 walkdir = "2"
 glob-match = "0.2"
+
+[[bin]]
+name = "almanach-orchestrator"
+path = "src/main.rs"
+
+[[bin]]
+name = "test-ws"
+path = "src/bin/test_ws.rs"
+
+[[bin]]
+name = "seed-courses"
+path = "src/bin/seed_courses.rs"
