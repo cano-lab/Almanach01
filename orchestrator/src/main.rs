@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+mod anthropic_proxy;
 mod api;
 mod auth;
 mod chat_db;
@@ -146,6 +147,36 @@ async fn main() -> anyhow::Result<()> {
                 ]),
         )
         .with_state(state.clone());
+
+    // Start Anthropic proxy for Claude Code integration
+    let proxy_port = std::env::var("PROXY_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(8080);
+    let proxy_target = std::env::var("PROXY_TARGET")
+        .unwrap_or_else(|_| "https://api.augureai.ca/v1".to_string());
+    
+    // Try to get the augure API key from state
+    let proxy_api_key = {
+        let keys = state.api_keys.read().await;
+        keys.get("augure").cloned().unwrap_or_default()
+    };
+    
+    if !proxy_api_key.is_empty() {
+        let proxy_config = anthropic_proxy::ProxyConfig {
+            target_base_url: proxy_target,
+            api_key: proxy_api_key,
+        };
+        
+        tokio::spawn(async move {
+            if let Err(e) = anthropic_proxy::run_proxy(proxy_config, proxy_port).await {
+                tracing::error!("Proxy server error: {}", e);
+            }
+        });
+        
+        tracing::info!("🔄 Anthropic proxy running on http://0.0.0.0:{}", proxy_port);
+        tracing::info!("   Claude Code: export ANTHROPIC_API_KEY=<augure-key> && export ANTHROPIC_BASE_URL=http://0.0.0.0:{}", proxy_port);
+    } else {
+        tracing::warn!("⚠️  No augure API key configured. Proxy not started.");
+        tracing::info!("   Set an augure key in Settings panel to enable Claude Code proxy.");
+    }
 
     let addr = format!("0.0.0.0:{}", config.port);
     tracing::info!("🚀 Almanach Server running on http://{}", addr);
