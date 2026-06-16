@@ -6,6 +6,10 @@ set -euo pipefail
 
 cd /opt/almanach/app
 
+# Mark this directory as safe for git in case the script is run as a
+# different user than the repo owner (e.g. root vs deploy).
+git config --global --add safe.directory /opt/almanach/app 2>/dev/null || true
+
 # Pull latest code
 echo "Pulling latest code..."
 git fetch origin main
