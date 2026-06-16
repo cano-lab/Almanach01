@@ -19,10 +19,26 @@ if ! command -v cargo &>/dev/null; then
     source "${HOME}/.cargo/env"
 fi
 
-# Clone repo if app directory is empty
+# Determine if this script is being run from inside an existing Almanach01 repo
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+IN_REPO=false
+if [ -d "${REPO_ROOT}/.git" ]; then
+    REMOTE_URL=$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)
+    if [[ "${REMOTE_URL}" == *"cano-lab/Almanach01"* ]]; then
+        IN_REPO=true
+    fi
+fi
+
+# Populate app directory if it's empty
 if [ -z "$(ls -A "${APP_DIR}" 2>/dev/null)" ]; then
-    echo "Cloning Almanach01 repo into ${APP_DIR}..."
-    git clone https://github.com/cano-lab/Almanach01.git "${APP_DIR}"
+    if [ "${IN_REPO}" = true ]; then
+        echo "Copying existing repo from ${REPO_ROOT} to ${APP_DIR}..."
+        cp -a "${REPO_ROOT}/." "${APP_DIR}/"
+    else
+        echo "Cloning Almanach01 repo into ${APP_DIR}..."
+        git clone https://github.com/cano-lab/Almanach01.git "${APP_DIR}"
+    fi
 fi
 
 # Copy deploy script to the scripts directory so GitHub Actions can invoke it
