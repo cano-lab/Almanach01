@@ -35,4 +35,4 @@ jobs:
           chmod 600 ~/.ssh/config
 
       - name: Deploy to VPS
-        run: ssh almanach-vps /opt/almanach/scripts/deploy.sh
+        run: ssh almanach-vps ~/almanach/scripts/deploy-user.sh
