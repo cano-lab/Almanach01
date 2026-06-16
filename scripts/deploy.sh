@@ -10,6 +10,9 @@ cd /opt/almanach/app
 # different user than the repo owner (e.g. root vs deploy).
 git config --global --add safe.directory /opt/almanach/app 2>/dev/null || true
 
+# Ensure pulls use HTTPS so SSH host key verification is not required.
+git remote set-url origin https://github.com/cano-lab/Almanach01.git
+
 # Pull latest code
 echo "Pulling latest code..."
 git fetch origin main
