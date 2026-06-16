@@ -110,6 +110,18 @@ else
   exit 1
 fi
 
+# Copy deploy script so it can be invoked by GitHub Actions and manually
+DEPLOY_SRC="${REPO_ROOT}/scripts/deploy.sh"
+if [[ -f "${DEPLOY_SRC}" ]]; then
+  cp "${DEPLOY_SRC}" /opt/almanach/scripts/deploy.sh
+  chmod +x /opt/almanach/scripts/deploy.sh
+  chown deploy:almanach /opt/almanach/scripts/deploy.sh
+  echo "Copied deploy script to /opt/almanach/scripts/deploy.sh"
+else
+  echo "ERROR: Deploy script not found at ${DEPLOY_SRC}"
+  exit 1
+fi
+
 systemctl daemon-reload
 systemctl enable almanach-orchestrator
 
