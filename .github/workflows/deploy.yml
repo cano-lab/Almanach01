@@ -13,4 +13,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy on VPS
-        run: /opt/almanach/scripts/deploy.sh
+        run: |
+          cp ./scripts/deploy.sh /opt/almanach/scripts/deploy.sh
+          /opt/almanach/scripts/deploy.sh
