@@ -7,6 +7,7 @@ mod chat_db;
 mod config;
 mod courses;
 mod course_api;
+mod terminal_agent;
 
 use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
 use axum::{
@@ -27,6 +28,7 @@ pub struct AppState {
     pub data_dir: std::path::PathBuf,
     pub auth: RwLock<AuthManager>,
     pub chat_db: Arc<ChatDb>,
+    pub terminal: terminal_agent::TerminalAgent,
 }
 
 fn load_api_keys(data_dir: &std::path::Path) -> HashMap<String, String> {
@@ -73,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
         data_dir: data_dir.clone(),
         auth: RwLock::new(auth_manager),
         chat_db,
+        terminal: terminal_agent::TerminalAgent::new(),
     });
 
     let app = Router::new()
@@ -115,7 +118,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/admin/system-prompts", get(auth::admin_list_system_prompts).post(auth::admin_create_system_prompt))
         .route("/api/admin/system-prompts/:id/activate", post(auth::admin_activate_system_prompt))
         .route("/api/admin/system-prompts/:id", delete(auth::admin_delete_system_prompt))
-        .route("/api/roadmaps", get(course_api::list_roadmaps).post(course_api::create_roadmap))
+        .route("/api/terminal/mount", post(api::terminal_mount))
+        .route("/api/terminal/sessions", get(api::terminal_list_sessions))
+        .route("/api/terminal/sessions/:id", delete(api::terminal_unmount))
+        .route("/api/terminal/sessions/:id/exec", post(api::terminal_exec))
+        .route("/api/terminal/sessions/:id/read", post(api::terminal_read))
+        .route("/api/terminal/sessions/:id/write", post(api::terminal_write))
+        .route("/api/terminal/sessions/:id/ls", post(api::terminal_ls))
         .route("/api/roadmaps/:id", get(course_api::get_roadmap).delete(course_api::delete_roadmap))
         .route("/api/roadmaps/:id/activate", post(course_api::set_active_roadmap))
         .route("/api/roadmaps/:id/topics", post(course_api::create_topic))

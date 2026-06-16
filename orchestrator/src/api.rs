@@ -1530,3 +1530,97 @@ pub async fn get_lesson_chat(
         }))),
     }
 }
+
+// === Terminal Agent API ───────────────────────────────────────────────────
+
+pub async fn terminal_mount(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<MountRequest>,
+) -> Result<Json<crate::terminal_agent::TerminalSession>, (StatusCode, String)> {
+    match state.terminal.mount(&req.path).await {
+        Ok(session) => Ok(Json(session)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+pub async fn terminal_list_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let sessions = state.terminal.list_sessions().await;
+    Json(serde_json::json!({ "sessions": sessions }))
+}
+
+pub async fn terminal_unmount(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    match state.terminal.unmount(&id).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => Err((StatusCode::NOT_FOUND, e)),
+    }
+}
+
+pub async fn terminal_exec(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<ExecRequest>,
+) -> Result<Json<crate::terminal_agent::ExecResult>, (StatusCode, String)> {
+    match state.terminal.exec(&id, &req.command).await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+pub async fn terminal_read(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<FilePathRequest>,
+) -> Result<Json<crate::terminal_agent::FileContent>, (StatusCode, String)> {
+    match state.terminal.read_file(&id, &req.path).await {
+        Ok(content) => Ok(Json(content)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+pub async fn terminal_write(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<WriteFileRequest>,
+) -> Result<Json<crate::terminal_agent::WriteResult>, (StatusCode, String)> {
+    match state.terminal.write_file(&id, &req.path, &req.content).await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+pub async fn terminal_ls(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<FilePathRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    match state.terminal.list_dir(&id, &req.path).await {
+        Ok(entries) => Ok(Json(serde_json::json!({ "entries": entries }))),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MountRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExecRequest {
+    pub command: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FilePathRequest {
+    pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WriteFileRequest {
+    pub path: String,
+    pub content: String,
+}

@@ -450,3 +450,151 @@ pub async fn send_message(conversation_id: &str, content: &str) -> Result<ChatMe
         Err(format!("Failed to send message: {}", response.status()))
     }
 }
+
+// === Terminal Agent API ───────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TerminalSession {
+    pub id: String,
+    pub path: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ExecResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FileContent {
+    pub content: String,
+    pub size: usize,
+    pub is_directory: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DirEntry {
+    pub name: String,
+    pub entry_type: String,
+    pub size: usize,
+}
+
+pub async fn mount_directory(path: &str) -> Result<TerminalSession, String> {
+    let mut req = Request::post("/api/terminal/mount");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({ "path": path });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to mount directory: {}", response.status()))
+    }
+}
+
+pub async fn list_terminal_sessions() -> Result<Vec<TerminalSession>, String> {
+    let mut req = Request::get("/api/terminal/sessions");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        let val: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        let sessions = val.get("sessions")
+            .and_then(|s| s.as_array())
+            .map(|arr| arr.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect())
+            .unwrap_or_default();
+        Ok(sessions)
+    } else {
+        Err(format!("Failed to list sessions: {}", response.status()))
+    }
+}
+
+pub async fn unmount_directory(session_id: &str) -> Result<(), String> {
+    let mut req = Request::delete(&format!("/api/terminal/sessions/{}", session_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() || response.status() == 204 {
+        Ok(())
+    } else {
+        Err(format!("Failed to unmount: {}", response.status()))
+    }
+}
+
+pub async fn exec_command(session_id: &str, command: &str) -> Result<ExecResult, String> {
+    let mut req = Request::post(&format!("/api/terminal/sessions/{}/exec", session_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({ "command": command });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to execute command: {}", response.status()))
+    }
+}
+
+pub async fn read_file(session_id: &str, path: &str) -> Result<FileContent, String> {
+    let mut req = Request::post(&format!("/api/terminal/sessions/{}/read", session_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({ "path": path });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to read file: {}", response.status()))
+    }
+}
+
+pub async fn write_file(session_id: &str, path: &str, content: &str) -> Result<serde_json::Value, String> {
+    let mut req = Request::post(&format!("/api/terminal/sessions/{}/write", session_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({ "path": path, "content": content });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to write file: {}", response.status()))
+    }
+}
+
+pub async fn list_dir(session_id: &str, path: &str) -> Result<Vec<DirEntry>, String> {
+    let mut req = Request::post(&format!("/api/terminal/sessions/{}/ls", session_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({ "path": path });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        let val: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        let entries = val.get("entries")
+            .and_then(|e| e.as_array())
+            .map(|arr| arr.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect())
+            .unwrap_or_default();
+        Ok(entries)
+    } else {
+        Err(format!("Failed to list directory: {}", response.status()))
+    }
+}

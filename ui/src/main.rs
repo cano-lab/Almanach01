@@ -6,6 +6,7 @@ use components::dashboard::Dashboard;
 use components::login::Login;
 use components::settings::SettingsPanel;
 use components::teams::Teams;
+use components::terminal::TerminalPanel;
 use yew::prelude::*;
 
 #[function_component(App)]
@@ -54,6 +55,12 @@ fn app() -> Html {
                             {"Teams"}
                         </button>
                         <button
+                            class={format!("nav-link {}", if *current_view == "terminal" { "active" } else { "" })}
+                            onclick={on_view_change.reform(|_| "terminal".to_string())}
+                        >
+                            {"Terminal"}
+                        </button>
+                        <button
                             class={format!("nav-link {}", if *current_view == "settings" { "active" } else { "" })}
                             onclick={on_view_change.reform(|_| "settings".to_string())}
                         >
@@ -68,6 +75,7 @@ fn app() -> Html {
                         "teams" => html! {
                             <Teams auth_token={api::get_token().unwrap_or_default()} />
                         },
+                        "terminal" => html! { <TerminalPanel /> },
                         "settings" => html! { <SettingsPanel /> },
                         _ => html! { <Dashboard /> },
                     }}

@@ -85,7 +85,7 @@ pub fn settings_panel() -> Html {
         let adding = adding.clone();
         let error = error.clone();
         let success = success.clone();
-        let keys = keys.clone();
+        let _keys = keys.clone();
         let on_refresh = on_refresh.clone();
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
