@@ -1,0 +1,24 @@
+[Unit]
+Description=Almanach Orchestrator
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=almanach
+Group=almanach
+WorkingDirectory=/opt/almanach/app
+ExecStart=/opt/almanach/bin/almanach-orchestrator
+EnvironmentFile=/opt/almanach/.env
+Restart=on-failure
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=almanach
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
