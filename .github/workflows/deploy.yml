@@ -12,19 +12,5 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup SSH and deploy
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-
-          cat <<EOF > ~/.ssh/config
-          Host almanach-vps
-            HostName ${{ secrets.VPS_HOST }}
-            User ${{ secrets.VPS_USER || 'deploy' }}
-            IdentityFile ~/.ssh/id_ed25519
-            StrictHostKeyChecking accept-new
-          EOF
-          chmod 600 ~/.ssh/config
-
-          ssh almanach-vps /opt/almanach/scripts/deploy.sh
+      - name: Deploy on VPS
+        run: /opt/almanach/scripts/deploy.sh
