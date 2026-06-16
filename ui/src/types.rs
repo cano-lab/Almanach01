@@ -119,3 +119,35 @@ pub struct MeResponse {
     pub username: String,
     pub role: String,
 }
+
+// ─── Legacy Types (to be removed when components are replaced) ────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentStatus {
+    Running,
+    Stopped,
+    Starting,
+    Stopping,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AgentContainer {
+    pub id: String,
+    pub name: String,
+    pub status: AgentStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Team {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TeamRoleAssignment {
+    pub team_id: String,
+    pub user_id: String,
+    pub role: String,
+}

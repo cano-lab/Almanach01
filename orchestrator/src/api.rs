@@ -152,7 +152,7 @@ pub struct ApiKeyInfo {
 
 pub async fn list_api_keys(State(state): State<Arc<AppState>>) -> Json<Vec<ApiKeyInfo>> {
     let keys = state.api_keys.read().await;
-    let providers = ["zai", "anthropic", "openai", "kimi", "google"];
+    let providers = ["zai", "anthropic", "openai", "kimi", "google", "augure"];
 
     Json(
         providers
@@ -193,6 +193,19 @@ pub async fn delete_api_key(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Return the LLM API endpoint URL for a given provider.
+fn get_provider_endpoint(provider: &str) -> String {
+    match provider {
+        "kimi" => "https://api.kimi.com/coding/v1/messages".to_string(),
+        "augure" => "https://api.augureai.ca/v1/chat/completions".to_string(),
+        "openai" => "https://api.openai.com/v1/chat/completions".to_string(),
+        "anthropic" => "https://api.anthropic.com/v1/messages".to_string(),
+        "google" => "https://generativelanguage.googleapis.com/v1beta/models".to_string(),
+        "zai" => "https://api.zai.com/v1/chat/completions".to_string(),
+        _ => format!("https://api.{}.com/v1/chat/completions", provider),
+    }
 }
 
 // === Conversations ===
@@ -446,8 +459,9 @@ async fn do_compact_conversation(
 
     // Call LLM for summary
     let client = reqwest::Client::new();
+    let endpoint = get_provider_endpoint(provider);
     let response = client
-        .post("https://api.kimi.com/coding/v1/messages")
+        .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
@@ -636,8 +650,9 @@ pub async fn send_message(
 
     // Call Kimi API (or other provider)
     let client = reqwest::Client::new();
+    let endpoint = get_provider_endpoint(&provider);
     let response = client
-        .post("https://api.kimi.com/coding/v1/messages")
+        .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
@@ -745,7 +760,8 @@ pub async fn stream_conversation(
 
     tokio::spawn(async move {
         let client = reqwest::Client::new();
-        let response = client.post("https://api.kimi.com/coding/v1/messages")
+        let endpoint = get_provider_endpoint(&provider);
+        let response = client.post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&serde_json::json!({
@@ -924,8 +940,9 @@ pub async fn chat_stream(
     drop(keys);
 
     let client = reqwest::Client::new();
+    let endpoint = get_provider_endpoint(&provider);
     let response = client
-        .post("https://api.kimi.com/coding/v1/messages")
+        .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
@@ -1049,8 +1066,9 @@ async fn handle_chat_ws(
 
                     // Non-streaming for WebSocket simplicity
                     let client = reqwest::Client::new();
+                    let endpoint = get_provider_endpoint(&provider);
                     if let Ok(response) = client
-                        .post("https://api.kimi.com/coding/v1/messages")
+                        .post(&endpoint)
                         .header("Authorization", format!("Bearer {}", api_key))
                         .header("Content-Type", "application/json")
                         .json(&serde_json::json!({

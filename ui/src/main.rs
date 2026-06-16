@@ -4,6 +4,7 @@ mod types;
 
 use components::dashboard::Dashboard;
 use components::login::Login;
+use components::settings::SettingsPanel;
 use components::teams::Teams;
 use yew::prelude::*;
 
@@ -44,13 +45,19 @@ fn app() -> Html {
                             class={format!("nav-link {}", if *current_view == "agents" { "active" } else { "" })}
                             onclick={on_view_change.reform(|_| "agents".to_string())}
                         >
-                            {"Agents"}
+                            {"Dashboard"}
                         </button>
                         <button
                             class={format!("nav-link {}", if *current_view == "teams" { "active" } else { "" })}
                             onclick={on_view_change.reform(|_| "teams".to_string())}
                         >
                             {"Teams"}
+                        </button>
+                        <button
+                            class={format!("nav-link {}", if *current_view == "settings" { "active" } else { "" })}
+                            onclick={on_view_change.reform(|_| "settings".to_string())}
+                        >
+                            {"Settings"}
                         </button>
                     </nav>
                     <button class="btn-logout" onclick={on_logout}>{"Logout"}</button>
@@ -61,6 +68,7 @@ fn app() -> Html {
                         "teams" => html! {
                             <Teams auth_token={api::get_token().unwrap_or_default()} />
                         },
+                        "settings" => html! { <SettingsPanel /> },
                         _ => html! { <Dashboard /> },
                     }}
                 </main>

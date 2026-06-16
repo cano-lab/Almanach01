@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::*;
 
-// === Auth & Token Storage ─────────────────────────────────────────────────
+// === Auth Types ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LoginRequest {
@@ -22,10 +22,21 @@ pub struct TokenResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct AuthStatus {
+    pub auth_enabled: bool,
+    pub has_admin: bool,
+    pub registration_enabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct MeResponse {
+    pub user_id: Option<String>,
     pub username: String,
+    pub display_name: Option<String>,
     pub role: String,
 }
+
+// === Token Storage ────────────────────────────────────────────────────────
 
 pub fn store_token(token: &str) {
     let window = web_sys::window().unwrap();
@@ -51,6 +62,18 @@ fn auth_header() -> Option<(&'static str, String)> {
 
 // === Auth API ─────────────────────────────────────────────────────────────
 
+pub async fn get_auth_status() -> Result<AuthStatus, String> {
+    let response = Request::get("/auth/status")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("API error: {}", response.status()))
+    }
+}
+
 pub async fn login(password: &str) -> Result<TokenResponse, String> {
     let response = Request::post("/auth/login")
         .json(&LoginRequest { password: password.to_string() })
@@ -67,6 +90,22 @@ pub async fn login(password: &str) -> Result<TokenResponse, String> {
     }
 }
 
+pub async fn register(password: &str) -> Result<(), String> {
+    let response = Request::post("/auth/register")
+        .json(&LoginRequest { password: password.to_string() })
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        Ok(())
+    } else {
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Registration failed: {}", error_text))
+    }
+}
+
 pub async fn me() -> Result<MeResponse, String> {
     let mut req = Request::get("/api/me");
     if let Some((key, val)) = auth_header() {
@@ -77,6 +116,153 @@ pub async fn me() -> Result<MeResponse, String> {
         response.json().await.map_err(|e| e.to_string())
     } else {
         Err(format!("Me failed: {}", response.status()))
+    }
+}
+
+// === Legacy Stubs (to be removed when components are replaced) ────────────
+
+pub async fn fetch_agents() -> Result<Vec<AgentContainer>, String> {
+    Ok(vec![])
+}
+
+pub async fn fetch_teams() -> Result<Vec<Team>, String> {
+    Ok(vec![])
+}
+
+pub async fn fetch_team_roles(_team_id: &str) -> Result<std::collections::HashMap<String, TeamRoleAssignment>, String> {
+    Ok(std::collections::HashMap::new())
+}
+
+pub async fn assign_team_role(_team_id: &str, _agent_id: &str, _role: &str) -> Result<(), String> {
+    Ok(())
+}
+
+pub async fn remove_team_role(_team_id: &str, _agent_id: &str) -> Result<(), String> {
+    Ok(())
+}
+
+pub async fn start_agent(_id: &str) -> Result<(), String> {
+    Ok(())
+}
+
+pub async fn stop_agent(_id: &str) -> Result<(), String> {
+    Ok(())
+}
+
+// === Admin API ────────────────────────────────────────────────────────────
+
+pub async fn fetch_users() -> Result<Vec<serde_json::Value>, String> {
+    let mut req = Request::get("/api/admin/users");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        let val: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        Ok(val.get("users").and_then(|u| u.as_array()).cloned().unwrap_or_default())
+    } else {
+        Err(format!("Failed to fetch users: {}", response.status()))
+    }
+}
+
+pub async fn fetch_pending_users() -> Result<Vec<serde_json::Value>, String> {
+    let mut req = Request::get("/api/admin/users/pending");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        let val: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        Ok(val.get("users").and_then(|u| u.as_array()).cloned().unwrap_or_default())
+    } else {
+        Err(format!("Failed to fetch pending users: {}", response.status()))
+    }
+}
+
+pub async fn approve_user(user_id: &str, action: &str) -> Result<serde_json::Value, String> {
+    let mut req = Request::post("/api/admin/approve-user");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({
+        "user_id": user_id,
+        "action": action,
+    });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to approve user: {}", response.status()))
+    }
+}
+
+pub async fn create_user(username: &str, password: &str, display_name: Option<&str>, role: &str) -> Result<serde_json::Value, String> {
+    let mut req = Request::post("/api/admin/create-user");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({
+        "username": username,
+        "password": password,
+        "display_name": display_name,
+        "role": role,
+    });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to create user: {}", response.status()))
+    }
+}
+
+// === API Keys ────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ApiKeyInfo {
+    pub provider: String,
+    pub has_key: bool,
+}
+
+pub async fn fetch_api_keys() -> Result<Vec<ApiKeyInfo>, String> {
+    let mut req = Request::get("/api/keys");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to fetch API keys: {}", response.status()))
+    }
+}
+
+pub async fn set_api_key(provider: &str, key: &str) -> Result<(), String> {
+    let mut req = Request::post("/api/keys");
+    if let Some((key_hdr, val)) = auth_header() {
+        req = req.header(key_hdr, &val);
+    }
+    let body = serde_json::json!({ "provider": provider, "key": key });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        Ok(())
+    } else {
+        Err(format!("Failed to set API key: {}", response.status()))
+    }
+}
+
+pub async fn delete_api_key(provider: &str) -> Result<(), String> {
+    let mut req = Request::delete(&format!("/api/keys/{}", provider));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        Ok(())
+    } else {
+        Err(format!("Failed to delete API key: {}", response.status()))
     }
 }
 
