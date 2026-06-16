@@ -68,11 +68,26 @@ if ! su - deploy -c 'command -v cargo' >/dev/null 2>&1; then
   echo "Installed Rust for deploy user"
 fi
 
-# Clone repo if /opt/almanach/app is empty
+# Determine if this script is being run from inside an existing Almanach01 repo
+IN_REPO=false
+if [[ -d "${REPO_ROOT}/.git" ]]; then
+  REMOTE_URL=$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)
+  if [[ "${REMOTE_URL}" == *"cano-lab/Almanach01"* ]]; then
+    IN_REPO=true
+  fi
+fi
+
+# Populate app directory if it's empty
 if [[ -z "$(ls -A /opt/almanach/app 2>/dev/null || true)" ]]; then
-  git clone https://github.com/cano-lab/Almanach01.git /opt/almanach/app
-  chown -R deploy:almanach /opt/almanach/app
-  echo "Cloned repo into /opt/almanach/app"
+  if [[ "${IN_REPO}" == true ]]; then
+    echo "Copying existing repo from ${REPO_ROOT} to /opt/almanach/app..."
+    cp -a "${REPO_ROOT}/." /opt/almanach/app
+    chown -R deploy:almanach /opt/almanach/app
+  else
+    git clone https://github.com/cano-lab/Almanach01.git /opt/almanach/app
+    chown -R deploy:almanach /opt/almanach/app
+    echo "Cloned repo into /opt/almanach/app"
+  fi
 fi
 
 # Symlink data directory
