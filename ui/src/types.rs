@@ -1,173 +1,121 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentStatus {
-    Running,
-    Stopped,
-    Starting,
-    Stopping,
-    Error,
-}
+// ─── Course Types ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AgentContainer {
+pub struct Course {
     pub id: String,
-    pub name: String,
-    pub status: AgentStatus,
-    pub config: AgentConfig,
-    pub tailscale_ip: Option<String>,
-    pub resource_usage: Option<ResourceUsage>,
-    pub project: Option<String>,
-    pub tags: Vec<String>,
-    pub health_status: Option<HealthStatus>,
-    pub runtime: Option<String>,
-    pub gateway_port: u16,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct HealthStatus {
-    pub healthy: bool,
-    pub last_check: String,
-    pub message: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AgentConfig {
-    pub llm_provider: LlmProvider,
-    pub llm_model: Option<String>,
-    pub memory_mb: u32,
-    pub cpu_cores: f32,
-    pub env_vars: std::collections::HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum LlmProvider {
-    // Cloud
-    OpenAI,
-    Anthropic,
-    Gemini,
-    Kimi,
-    Zai,
-    Huggingface,
-    // Local
-    Ollama,
-    LlamaCpp,
-    Vllm,
-    LmStudio,
-}
-
-impl LlmProvider {
-    pub fn is_local(&self) -> bool {
-        matches!(
-            self,
-            LlmProvider::Ollama | LlmProvider::LlamaCpp | LlmProvider::Vllm | LlmProvider::LmStudio
-        )
-    }
-
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            LlmProvider::OpenAI => "OpenAI",
-            LlmProvider::Anthropic => "Anthropic",
-            LlmProvider::Gemini => "Gemini",
-            LlmProvider::Kimi => "Kimi (Moonshot)",
-            LlmProvider::Zai => "Zhipu AI (GLM)",
-            LlmProvider::Huggingface => "Hugging Face",
-            LlmProvider::Ollama => "Ollama (Local)",
-            LlmProvider::LlamaCpp => "llama.cpp (Local)",
-            LlmProvider::Vllm => "vLLM (Local)",
-            LlmProvider::LmStudio => "LM Studio (Local)",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ResourceUsage {
-    pub memory_mb: f32,
-    pub cpu_percent: f32,
-}
-
-// === Team Types ===
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Team {
-    pub id: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub version: String,
-    pub router: RouterConfig,
-    pub agents: std::collections::HashMap<String, TeamAgent>,
-    pub routing: std::collections::HashMap<String, RoutingRule>,
-    pub created_at: String,
-    pub status: TeamStatus,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TeamStatus {
-    Active,
-    Inactive,
-    Starting,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RouterConfig {
-    pub name: String,
-    pub mode: RouterMode,
-    pub confidence_threshold: f32,
-    pub clarify_on_low_confidence: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum RouterMode {
-    Keyword,
-    Llm,
-    Hybrid,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TeamAgent {
-    pub agent: String,
+    pub title: String,
+    pub title_en: Option<String>,
     pub description: String,
+    pub grade: String,
+    pub language: String,
+    pub credit_hours: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RoutingRule {
+pub struct Module {
+    pub id: String,
+    pub course_id: String,
+    pub title: String,
+    pub title_en: Option<String>,
+    pub description: String,
+    pub order_index: i64,
+    pub estimated_hours: Option<i64>,
+    #[serde(default)]
+    pub lessons: Vec<Lesson>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Lesson {
+    pub id: String,
+    pub title: String,
+    pub title_en: Option<String>,
+    pub description: String,
+    pub estimated_minutes: i64,
+    pub order_index: i64,
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub objectives: Vec<String>,
     #[serde(default)]
     pub keywords: Vec<String>,
-    #[serde(default)]
-    pub examples: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct TeamRoleAssignment {
+pub struct LessonDetail {
     pub id: String,
-    pub team_id: String,
-    pub intent: String,
-    pub agent_id: String,
-    pub assigned_at: String,
-    pub assigned_by: String,
+    pub title: String,
+    pub title_en: Option<String>,
+    pub description: String,
+    pub topics: Vec<String>,
+    pub objectives: Vec<String>,
+    pub estimated_minutes: i64,
+    pub keywords: Vec<String>,
+    pub order_index: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssignRoleRequest {
-    pub agent_id: String,
-    pub assigned_by: String,
+// ─── Enrollment & Progress ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Enrollment {
+    pub id: String,
+    pub course_id: String,
+    pub status: String,
+    pub enrolled_at: String,
+    pub completed_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClassifyRequest {
-    pub message: String,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LessonProgress {
+    pub id: String,
+    pub enrollment_id: String,
+    pub lesson_id: String,
+    pub status: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub last_activity_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ClassificationResult {
-    pub intent: String,
-    pub confidence: f32,
-    pub matched_keywords: Vec<String>,
-    pub needs_clarification: bool,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EnrollmentWithProgress {
+    pub enrollment: Enrollment,
+    pub course: Option<Course>,
+    pub progress: Vec<LessonProgress>,
+    pub total_lessons: usize,
+    pub completed_lessons: usize,
 }
 
+// ─── Chat Types ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    pub system_prompt: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChatMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+}
+
+// ─── User Types ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct User {
+    pub id: String,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MeResponse {
+    pub username: String,
+    pub role: String,
+}

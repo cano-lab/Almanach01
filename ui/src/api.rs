@@ -1,27 +1,9 @@
-use crate::types::{AgentContainer, Team, TeamRoleAssignment, AssignRoleRequest};
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 
-const API_BASE: &str = "/api";
+use crate::types::*;
 
-fn get_origin() -> String {
-    let window = web_sys::window().unwrap();
-    let location = window.location();
-    let protocol = location.protocol().unwrap_or_else(|_| "http:".to_string());
-    let host = location.host().unwrap_or_else(|_| "localhost:3001".to_string());
-    format!("{}//{}", protocol, host)
-}
-
-fn get_ws_origin() -> String {
-    let window = web_sys::window().unwrap();
-    let location = window.location();
-    let protocol = location.protocol().unwrap_or_else(|_| "http:".to_string());
-    let host = location.host().unwrap_or_else(|_| "localhost:3001".to_string());
-    let ws_protocol = if protocol == "https:" { "wss" } else { "ws" };
-    format!("{}://{}", ws_protocol, host)
-}
-
-// === Auth Types ===
+// === Auth & Token Storage ─────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LoginRequest {
@@ -40,71 +22,10 @@ pub struct TokenResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct AuthStatus {
-    pub auth_enabled: bool,
-    pub has_admin: bool,
-    #[allow(dead_code)]
-    pub registration_enabled: bool,
+pub struct MeResponse {
+    pub username: String,
+    pub role: String,
 }
-
-// === Auth API ===
-
-pub async fn get_auth_status() -> Result<AuthStatus, String> {
-    let response = Request::get("/auth/status")
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
-}
-
-pub async fn login(password: &str) -> Result<TokenResponse, String> {
-    let response = Request::post("/auth/login")
-        .json(&LoginRequest {
-            password: password.to_string(),
-        })
-        .map_err(|e| e.to_string())?
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else {
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        Err(format!("Login failed: {}", error_text))
-    }
-}
-
-pub async fn register(password: &str) -> Result<(), String> {
-    let response = Request::post("/auth/register")
-        .json(&LoginRequest {
-            password: password.to_string(),
-        })
-        .map_err(|e| e.to_string())?
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        Ok(())
-    } else {
-        let error_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Unknown error".to_string());
-        Err(format!("Registration failed: {}", error_text))
-    }
-}
-
-// === Token Storage ===
 
 pub fn store_token(token: &str) {
     let window = web_sys::window().unwrap();
@@ -124,152 +45,15 @@ pub fn clear_token() {
     storage.remove_item("almanach_token").unwrap();
 }
 
-// === Agent API (with auth) ===
-
-pub async fn fetch_agents() -> Result<Vec<AgentContainer>, String> {
-    let token = get_token();
-    let mut req = Request::get(&format!("{}/agents", API_BASE));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let response = req.send().await.map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
+fn auth_header() -> Option<(&'static str, String)> {
+    get_token().map(|t| ("Authorization", format!("Bearer {}", t)))
 }
 
-#[allow(dead_code)]
-pub async fn start_agent(id: &str) -> Result<AgentContainer, String> {
-    let token = get_token();
-    let mut req = Request::post(&format!("{}/agents/{}/start", API_BASE, id));
+// === Auth API ─────────────────────────────────────────────────────────────
 
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let response = req.send().await.map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
-}
-
-#[allow(dead_code)]
-pub async fn stop_agent(id: &str) -> Result<AgentContainer, String> {
-    let token = get_token();
-    let mut req = Request::post(&format!("{}/agents/{}/stop", API_BASE, id));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let response = req.send().await.map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
-}
-
-// === Teams API ===
-
-pub async fn fetch_teams() -> Result<Vec<Team>, String> {
-    let token = get_token();
-    let mut req = Request::get(&format!("{}/teams", API_BASE));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let response = req.send().await.map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
-}
-
-pub async fn fetch_team(id: &str) -> Result<Team, String> {
-    let token = get_token();
-    let mut req = Request::get(&format!("{}/teams/{}", API_BASE, id));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let response = req.send().await.map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
-}
-
-pub async fn fetch_team_roles(team_id: &str) -> Result<Vec<TeamRoleAssignment>, String> {
-    let token = get_token();
-    let mut req = Request::get(&format!("{}/teams/{}/roles", API_BASE, team_id));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let response = req.send().await.map_err(|e| e.to_string())?;
-
-    if response.ok() {
-        response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
-    } else {
-        Err(format!("API error: {}", response.status()))
-    }
-}
-
-pub async fn assign_team_role(
-    team_id: &str,
-    intent: &str,
-    agent_id: &str,
-    assigned_by: &str,
-) -> Result<TeamRoleAssignment, String> {
-    let token = get_token();
-    let mut req = Request::post(&format!("{}/teams/{}/roles/{}", API_BASE, team_id, intent));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
-    }
-
-    let request = AssignRoleRequest {
-        agent_id: agent_id.to_string(),
-        assigned_by: assigned_by.to_string(),
-    };
-
-    let response = req
-        .json(&request)
+pub async fn login(password: &str) -> Result<TokenResponse, String> {
+    let response = Request::post("/auth/login")
+        .json(&LoginRequest { password: password.to_string() })
         .map_err(|e| e.to_string())?
         .send()
         .await
@@ -277,33 +61,206 @@ pub async fn assign_team_role(
 
     if response.ok() {
         response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
     } else {
-        Err(format!("API error: {}", response.status()))
+        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        Err(format!("Login failed: {}", error_text))
     }
 }
 
-pub async fn remove_team_role(
-    team_id: &str,
-    intent: &str,
-) -> Result<TeamRoleAssignment, String> {
-    let token = get_token();
-    let mut req = Request::delete(&format!("{}/teams/{}/roles/{}", API_BASE, team_id, intent));
-
-    if let Some(ref t) = token {
-        req = req.header("Authorization", &format!("Bearer {}", t));
+pub async fn me() -> Result<MeResponse, String> {
+    let mut req = Request::get("/api/me");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
     }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Me failed: {}", response.status()))
+    }
+}
 
+// === Course API ───────────────────────────────────────────────────────────
+
+pub async fn fetch_courses() -> Result<Vec<Course>, String> {
+    let response = Request::get("/api/courses")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to fetch courses: {}", response.status()))
+    }
+}
+
+pub async fn get_course(id: &str) -> Result<serde_json::Value, String> {
+    let response = Request::get(&format!("/api/courses/{}", id))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to fetch course: {}", response.status()))
+    }
+}
+
+pub async fn enroll_course(id: &str) -> Result<serde_json::Value, String> {
+    let mut req = Request::post(&format!("/api/courses/{}/enroll", id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
     let response = req.send().await.map_err(|e| e.to_string())?;
 
     if response.ok() {
         response.json().await.map_err(|e| e.to_string())
-    } else if response.status() == 401 {
-        clear_token();
-        Err("Authentication required".to_string())
     } else {
-        Err(format!("API error: {}", response.status()))
+        Err(format!("Failed to enroll: {}", response.status()))
+    }
+}
+
+// === Enrollment API ───────────────────────────────────────────────────────
+
+pub async fn fetch_enrollments() -> Result<Vec<Enrollment>, String> {
+    let mut req = Request::get("/api/enrollments");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to fetch enrollments: {}", response.status()))
+    }
+}
+
+pub async fn get_enrollment_progress(enrollment_id: &str) -> Result<Vec<LessonProgress>, String> {
+    let mut req = Request::get(&format!("/api/enrollments/{}/progress", enrollment_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        let val: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        let progress = val.get("progress")
+            .and_then(|p| p.as_array())
+            .map(|arr| arr.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect())
+            .unwrap_or_default();
+        Ok(progress)
+    } else {
+        Err(format!("Failed to fetch progress: {}", response.status()))
+    }
+}
+
+// === Lesson API ───────────────────────────────────────────────────────────
+
+pub async fn get_lesson(id: &str) -> Result<LessonDetail, String> {
+    let response = Request::get(&format!("/api/lessons/{}", id))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to fetch lesson: {}", response.status()))
+    }
+}
+
+pub async fn start_lesson_chat(id: &str) -> Result<serde_json::Value, String> {
+    let mut req = Request::post(&format!("/api/lessons/{}/start", id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to start lesson: {}", response.status()))
+    }
+}
+
+pub async fn get_lesson_chat(id: &str) -> Result<Option<Conversation>, String> {
+    let mut req = Request::get(&format!("/api/lessons/{}/chat", id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        let val: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+        if val.get("has_chat").and_then(|v| v.as_bool()).unwrap_or(false) {
+            let conv = val.get("conversation_id")
+                .and_then(|id| id.as_str())
+                .map(|id| Conversation {
+                    id: id.to_string(),
+                    title: val.get("title").and_then(|t| t.as_str()).unwrap_or("Chat").to_string(),
+                    system_prompt: None,
+                    created_at: String::new(),
+                });
+            Ok(conv)
+        } else {
+            Ok(None)
+        }
+    } else {
+        Err(format!("Failed to fetch lesson chat: {}", response.status()))
+    }
+}
+
+pub async fn update_progress(enrollment_id: &str, lesson_id: &str, status: &str) -> Result<serde_json::Value, String> {
+    let mut req = Request::post("/api/progress");
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({
+        "enrollment_id": enrollment_id,
+        "lesson_id": lesson_id,
+        "status": status,
+    });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to update progress: {}", response.status()))
+    }
+}
+
+// === Chat API ─────────────────────────────────────────────────────────────
+
+pub async fn fetch_messages(conversation_id: &str) -> Result<Vec<ChatMessage>, String> {
+    let mut req = Request::get(&format!("/api/conversations/{}/messages", conversation_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let response = req.send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to fetch messages: {}", response.status()))
+    }
+}
+
+pub async fn send_message(conversation_id: &str, content: &str) -> Result<ChatMessage, String> {
+    let mut req = Request::post(&format!("/api/conversations/{}/messages", conversation_id));
+    if let Some((key, val)) = auth_header() {
+        req = req.header(key, &val);
+    }
+    let body = serde_json::json!({ "role": "user", "content": content });
+    let response = req.json(&body).map_err(|e| e.to_string())?
+        .send().await.map_err(|e| e.to_string())?;
+
+    if response.ok() {
+        response.json().await.map_err(|e| e.to_string())
+    } else {
+        Err(format!("Failed to send message: {}", response.status()))
     }
 }
