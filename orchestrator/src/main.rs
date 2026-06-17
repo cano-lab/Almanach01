@@ -128,6 +128,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/terminal/sessions/:id/read", post(api::terminal_read))
         .route("/api/terminal/sessions/:id/write", post(api::terminal_write))
         .route("/api/terminal/sessions/:id/ls", post(api::terminal_ls))
+        .route("/api/roadmaps", get(course_api::list_roadmaps).post(course_api::create_roadmap))
         .route("/api/roadmaps/:id", get(course_api::get_roadmap).delete(course_api::delete_roadmap))
         .route("/api/roadmaps/:id/activate", post(course_api::set_active_roadmap))
         .route("/api/roadmaps/:id/topics", post(course_api::create_topic))
