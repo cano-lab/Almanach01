@@ -310,11 +310,11 @@
     </div>
 
     <div class="modal-overlay hidden" id="settingsModal">
-      <div class="modal" style="width:500px;max-width:95vw;">
+      <div class="modal" style="width:420px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;">
         <h2>Settings</h2>
         <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">API keys are stored server-side and never returned to the UI.</p>
-        <div id="settingsContent"></div>
-        <button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);margin-top:16px" onclick="document.getElementById('settingsModal').classList.add('hidden')">Close</button>
+        <div id="settingsContent" style="overflow-y:auto;flex:1;"></div>
+        <button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);margin-top:16px;flex-shrink:0;" onclick="document.getElementById('settingsModal').classList.add('hidden')">Close</button>
       </div>
     </div>
 
