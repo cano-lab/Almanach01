@@ -215,6 +215,7 @@
                     <div class="name" id="userName">User</div>
                     <span class="role-badge" id="userRole">student</span>
                 </div>
+                <button onclick="showSettingsModal()" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:var(--radius);" title="Settings">⚙️</button>
                 <button onclick="doLogout()" style="background:none;border:none;color:var(--text-tertiary);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:var(--radius);" title="Logout">Logout</button>
             </div>
         </div>
@@ -308,9 +309,88 @@
         <div class="admin-content hidden" id="adminMetrics"></div>
     </div>
 
+    <div class="modal-overlay hidden" id="settingsModal">
+      <div class="modal" style="width:500px;max-width:95vw;">
+        <h2>Settings</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">API keys are stored server-side and never returned to the UI.</p>
+        <div id="settingsContent"></div>
+        <button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);margin-top:16px" onclick="document.getElementById('settingsModal').classList.add('hidden')">Close</button>
+      </div>
+    </div>
+
 <script>
-const API_BASE = '';
-let token = localStorage.getItem('token');
+const API_KEY_PROVIDERS = ['kimi', 'anthropic', 'openai', 'google', 'augure', 'zai'];
+
+function showSettingsModal() {
+  document.getElementById('settingsModal').classList.remove('hidden');
+  loadApiKeys();
+}
+
+async function loadApiKeys() {
+  const container = document.getElementById('settingsContent');
+  container.innerHTML = '<p>Loading...</p>';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/keys`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) { if (res.status === 401) doLogout(); return; }
+    const keys = await res.json();
+
+    const rows = API_KEY_PROVIDERS.map(provider => {
+      const info = keys.find(k => k.provider === provider) || { has_key: false };
+      const status = info.has_key
+        ? '<span style="color:var(--accent-teal);font-size:12px;">Configured</span>'
+        : '<span style="color:var(--text-tertiary);font-size:12px;">Not set</span>';
+      return `
+        <div style="margin-bottom:16px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);border:var(--line-weight) solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong style="text-transform:capitalize">${provider}</strong>
+            ${status}
+          </div>
+          <input type="password" id="key-${provider}" placeholder="Enter ${provider} API key" style="width:100%;padding:8px;border-radius:var(--radius);border:var(--line-weight) solid var(--border);background:var(--bg-primary);color:var(--text-primary);margin-bottom:8px;box-sizing:border-box;">
+          <div style="display:flex;gap:8px;">
+            <button class="btn" style="flex:1" onclick="saveApiKey('${provider}')">Save</button>
+            <button class="btn" style="flex:1;background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);" onclick="removeApiKey('${provider}')">Remove</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = rows;
+  } catch (e) {
+    container.innerHTML = '<p class="error">Failed to load API keys.</p>';
+  }
+}
+
+async function saveApiKey(provider) {
+  const input = document.getElementById(`key-${provider}`);
+  const key = input.value.trim();
+  if (!key) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/keys`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, key })
+    });
+    if (!res.ok) { if (res.status === 401) doLogout(); return; }
+    input.value = '';
+    loadApiKeys();
+  } catch (e) {}
+}
+
+async function removeApiKey(provider) {
+  try {
+    const res = await fetch(`${API_BASE}/api/keys/${provider}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) { if (res.status === 401) doLogout(); return; }
+    loadApiKeys();
+  } catch (e) {}
+}
+
 let currentConversation = null;
 let isSending = false;
 let isAdmin = false;
