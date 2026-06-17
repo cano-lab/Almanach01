@@ -21,7 +21,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::Mutex;
 
-pub use crate::courses::{Roadmap, RoadmapTopic, RoadmapLesson, StudentProgress, ProgressStatus, UserMetrics, SCHEMA_COURSES};
+pub use crate::courses::{SCHEMA_COURSES};
 
 /// Single-process Mutex wrapper. SQLite handles its own internal locking; the
 /// Mutex prevents Rust borrow conflicts only. For multi-thread workloads this
@@ -106,7 +106,27 @@ impl ChatDb {
             tracing::info!("Migrated schema v8: added conversations.lesson_id");
         }
 
-        // Migration: add courses, modules, lessons, enrollments, lesson_progress (schema v9)
+        // Migration: add provider and model to conversations if not exists (schema v10)
+        let has_provider: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'provider'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_provider == 0 {
+            conn.execute(
+                "ALTER TABLE conversations ADD COLUMN provider TEXT",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE conversations ADD COLUMN model TEXT",
+                [],
+            )?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version) VALUES (10)",
+                [],
+            )?;
+            tracing::info!("Migrated schema v10: added conversations.provider, conversations.model");
+        }
         let has_courses: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='courses'",
             [],
@@ -853,6 +873,8 @@ pub struct ChatConversation {
     pub title: String,
     pub system_prompt: Option<String>,
     pub color: String,
+    pub provider: Option<String>,
+    pub model: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub message_count: i64,
@@ -942,73 +964,79 @@ pub struct SystemPrompt {
 
 impl ChatDb {
     pub fn list_conversations(&self, user_id: &str) -> Result<Vec<ChatConversation>> {
-    let conn = self.conn.lock().unwrap();
-    let mut stmt = conn.prepare(
-        "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), created_at, last_message_at,
-                (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
-         FROM conversations c
-         WHERE user_id = ?1
-         ORDER BY COALESCE(last_message_at, created_at) DESC",
-    )?;
-    let rows = stmt
-        .query_map(params![user_id], |row| {
-            Ok(ChatConversation {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                system_prompt: row.get(2).ok(),
-                color: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5).unwrap_or_default(),
-                message_count: row.get(6)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
-}
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
+                    (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
+             FROM conversations c
+             WHERE user_id = ?1
+             ORDER BY COALESCE(last_message_at, created_at) DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![user_id], |row| {
+                Ok(ChatConversation {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    system_prompt: row.get(2).ok(),
+                    color: row.get(3)?,
+                    provider: row.get(4).ok(),
+                    model: row.get(5).ok(),
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7).unwrap_or_default(),
+                    message_count: row.get(8)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
 
-pub fn create_conversation(&self, user_id: &str, title: &str) -> Result<ChatConversation> {
-    let colors = ["#2a7f7f", "#b85c38", "#d4a843", "#5a7a5a", "#8a6a8a"];
-    let color = colors[uuid::Uuid::new_v4().as_u128() as usize % colors.len()];
-    let conn = self.conn.lock().unwrap();
-    let id = uuid::Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO conversations (id, user_id, agent_id, title, color, created_at, last_message_at)
-         VALUES (?1, ?2, 'chat', ?3, ?4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-        params![id, user_id, title, color],
-    )?;
-    Ok(ChatConversation {
-        id,
-        title: title.to_string(),
-        system_prompt: None,
-        color: color.to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
-        updated_at: chrono::Utc::now().to_rfc3339(),
-        message_count: 0,
-    })
-}
+    pub fn create_conversation(&self, user_id: &str, title: &str, provider: Option<&str>, model: Option<&str>) -> Result<ChatConversation> {
+        let colors = ["#2a7f7f", "#b85c38", "#d4a843", "#5a7a5a", "#8a6a8a"];
+        let color = colors[uuid::Uuid::new_v4().as_u128() as usize % colors.len()];
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO conversations (id, user_id, agent_id, title, color, provider, model, created_at, last_message_at)
+             VALUES (?1, ?2, 'chat', ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            params![id, user_id, title, color, provider, model],
+        )?;
+        Ok(ChatConversation {
+            id,
+            title: title.to_string(),
+            system_prompt: None,
+            color: color.to_string(),
+            provider: provider.map(|s| s.to_string()),
+            model: model.map(|s| s.to_string()),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            message_count: 0,
+        })
+    }
 
-pub fn get_conversation(&self, id: &str, user_id: &str) -> Result<ChatConversation> {
-    let conn = self.conn.lock().unwrap();
-    let row = conn.query_row(
-        "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), created_at, last_message_at,
-                (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
-         FROM conversations c
-         WHERE id = ?1 AND user_id = ?2",
-        params![id, user_id],
-        |row| {
-            Ok(ChatConversation {
-                id: row.get(0)?,
-                title: row.get(1)?,
-                system_prompt: row.get(2).ok(),
-                color: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5).unwrap_or_default(),
-                message_count: row.get(6)?,
-            })
-        },
-    )?;
-    Ok(row)
-}
+    pub fn get_conversation(&self, id: &str, user_id: &str) -> Result<ChatConversation> {
+        let conn = self.conn.lock().unwrap();
+        let row = conn.query_row(
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
+                    (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
+             FROM conversations c
+             WHERE id = ?1 AND user_id = ?2",
+            params![id, user_id],
+            |row| {
+                Ok(ChatConversation {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    system_prompt: row.get(2).ok(),
+                    color: row.get(3)?,
+                    provider: row.get(4).ok(),
+                    model: row.get(5).ok(),
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7).unwrap_or_default(),
+                    message_count: row.get(8)?,
+                })
+            },
+        )?;
+        Ok(row)
+    }
 
 pub fn delete_conversation(&self, id: &str, user_id: &str) -> Result<()> {
     let conn = self.conn.lock().unwrap();
@@ -1131,6 +1159,15 @@ pub fn add_message(
         content: content.to_string(),
         created_at: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+    pub fn update_message(&self, message_id: &str, content: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE messages SET content = ?1 WHERE id = ?2",
+            params![content, message_id],
+        )?;
+        Ok(())
     }
 
     // ─── System Prompts ───────────────────────────────────────────────────────
@@ -1230,7 +1267,7 @@ pub fn add_message(
     pub fn admin_list_user_conversations(&self, target_user_id: &str) -> Result<Vec<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1
@@ -1243,9 +1280,11 @@ pub fn add_message(
                     title: row.get(1)?,
                     system_prompt: row.get(2).ok(),
                     color: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5).unwrap_or_default(),
-                    message_count: row.get(6)?,
+                    provider: row.get(4).ok(),
+                    model: row.get(5).ok(),
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7).unwrap_or_default(),
+                    message_count: row.get(8)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1297,6 +1336,29 @@ pub fn add_message(
     }
 
     // ─── Per-Conversation System Prompt ───────────────────────────────────
+
+    pub fn get_conversation_provider_model(&self, conversation_id: &str, user_id: &str) -> Result<Option<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.query_row(
+            "SELECT provider, model FROM conversations WHERE id = ?1 AND user_id = ?2",
+            params![conversation_id, user_id],
+            |row| {
+                let provider: Option<String> = row.get(0)?;
+                let model: Option<String> = row.get(1)?;
+                Ok(provider.zip(model))
+            },
+        ).optional().context("get_conversation_provider_model")?;
+        Ok(result.flatten())
+    }
+
+    pub fn set_conversation_provider_model(&self, conversation_id: &str, user_id: &str, provider: &str, model: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversations SET provider = ?1, model = ?2 WHERE id = ?3 AND user_id = ?4",
+            params![provider, model, conversation_id, user_id],
+        )?;
+        Ok(())
+    }
 
     pub fn get_conversation_system_prompt(&self, conversation_id: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
@@ -1539,6 +1601,8 @@ pub fn add_message(
             title: title.to_string(),
             system_prompt: Some(system_prompt.to_string()),
             color: color.to_string(),
+            provider: None,
+            model: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             message_count: 0,
@@ -1548,7 +1612,7 @@ pub fn add_message(
     pub fn get_conversation_by_lesson(&self, user_id: &str, lesson_id: &str) -> Result<Option<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1 AND lesson_id = ?2
@@ -1560,9 +1624,11 @@ pub fn add_message(
                     title: row.get(1)?,
                     system_prompt: row.get(2).ok(),
                     color: row.get(3)?,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5).unwrap_or_default(),
-                    message_count: row.get(6)?,
+                    provider: row.get(4).ok(),
+                    model: row.get(5).ok(),
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7).unwrap_or_default(),
+                    message_count: row.get(8)?,
                 })
             },
         ).optional().context("get_conversation_by_lesson")

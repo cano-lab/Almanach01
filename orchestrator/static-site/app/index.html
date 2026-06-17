@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Almanach — Chat</title>
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js"></script>
     <style>
         :root {
             --bg-primary: #f7f5f0; --bg-secondary: #efebe3; --bg-tertiary: #e8e2d8;
@@ -75,42 +75,58 @@
         .role-badge.student { background: var(--accent-teal); color: white; }
 
         /* Main Chat */
-        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100vh; }
-        .chat-header { padding: 16px 24px; border-bottom: var(--line-weight) solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--bg-primary); }
-        .chat-header h2 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        #main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow-x: hidden; }
+        .chat-header { padding: 16px 24px; border-bottom: var(--line-weight) solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--bg-primary); gap: 12px; flex-wrap: wrap; }
+        .chat-header h2 { font-size: 16px; font-weight: 600; color: var(--text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .prompt-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--accent-surface); border: var(--line-weight) solid var(--accent-teal); border-radius: var(--radius); font-size: 12px; color: var(--accent-teal); cursor: pointer; }
-        .messages-container { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
-        .message { display: flex; gap: 12px; align-items: flex-start; max-width: 80%; }
+        .messages-container { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; min-height: 0; min-width: 0; width: 100%; box-sizing: border-box; }
+        .message { display: flex; gap: 12px; align-items: flex-start; max-width: 100%; min-width: 0; }
         .message.user { align-self: flex-end; flex-direction: row-reverse; }
         .message.system { align-self: center; }
         .message-avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: 700; flex-shrink: 0; }
-        .message-bubble { padding: 12px 16px; border-radius: 8px; border: var(--line-weight) solid var(--border); background: white; font-size: 15px; line-height: 1.5; }
+        .message-bubble { padding: 12px 16px; border-radius: 8px; border: var(--line-weight) solid var(--border); background: white; font-size: 15px; line-height: 1.5; max-width: 100%; min-width: 0; word-break: break-word; overflow-wrap: anywhere; box-sizing: border-box; }
         .message.user .message-bubble { background: var(--accent-teal); color: white; border-color: var(--accent-teal); }
         .message.assistant .message-bubble { background: white; color: var(--text-primary); }
         .message.system .message-bubble { background: var(--accent-cadmium); color: var(--text-primary); font-style: italic; font-size: 14px; border: var(--line-weight) dashed var(--accent-cadmium); text-align: center; }
 
-        /* Code Execution */
-        .code-block { position: relative; margin: 8px 0; }
-        .code-tabs { display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 4px; }
-        .tab-btn { background: none; border: none; color: #888; cursor: pointer; font-size: 12px; padding: 4px 8px; border-radius: 4px; }
-        .tab-btn.active { background: #333; color: #fff; }
-        .tab-btn:hover { color: #fff; }
-        .tab-panel iframe { width: 100%; height: 300px; border: 1px solid var(--border); border-radius: 4px; background: white; }
-        .code-block pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow-x: auto; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.4; border: 1px solid #333; }
-        .code-block .run-btn { position: absolute; top: 6px; right: 6px; padding: 4px 10px; font-size: 12px; background: var(--accent-teal); color: white; border: none; border-radius: 4px; cursor: pointer; opacity: 1; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-        .code-block .run-btn:hover { background: #1f6b6b; box-shadow: 0 3px 6px rgba(0,0,0,0.4); }
-        .code-block .run-btn:disabled { background: var(--text-tertiary); cursor: not-allowed; }
-        .code-output { margin-top: 4px; padding: 8px 12px; background: #f0f0f0; border: 1px solid var(--border); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
-        .code-output .pyodide-note { font-size: 11px; color: #999; margin-top: 6px; padding-top: 6px; border-top: 1px solid #ddd; }
-        .code-output.error { color: var(--accent-rust); border-color: var(--accent-rust); background: #fff5f0; }
+        /* Code widget (unified for HTML and Python) */
+        .code-block { position: relative; margin: 8px 0; max-width: 100%; }
+        .code-widget { border: 1px solid #333; border-radius: 6px; background: #1e1e1e; overflow: hidden; display: flex; flex-direction: column; max-width: 100%; max-height: 80vh; box-sizing: border-box; }
+        .code-widget-header { display: flex; align-items: center; justify-content: space-between; background: #252526; border-bottom: 1px solid #333; padding: 0 8px; flex-wrap: wrap; gap: 8px; }
+        .code-widget-tabs { display: flex; flex-wrap: wrap; }
+        .code-widget-tabs button { padding: 6px 14px; font-size: 12px; background: transparent; border: none; color: #969696; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+        .code-widget-tabs button:hover { color: #d4d4d4; }
+        .code-widget-tabs button.active { color: #d4d4d4; border-bottom-color: var(--accent-teal); background: #1e1e1e; }
+        .code-widget-actions { display: flex; gap: 6px; align-items: center; }
+        .code-widget-actions button { padding: 4px 10px; font-size: 12px; background: var(--accent-teal); color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .code-widget-actions button:hover { background: #1f6b6b; }
+        .code-widget-actions button:disabled { background: var(--text-tertiary); cursor: not-allowed; }
+        .code-widget-panel { display: none; flex: 1; min-height: 0; }
+        .code-widget-panel.active { display: block; }
+        .code-widget-body { display: flex; flex-direction: column; min-height: 120px; }
+        .code-widget-body iframe { width: 100%; height: 300px; border: none; display: block; background: white; max-width: 100%; }
+        .code-source-area { width: 100%; min-height: 120px; max-height: 60vh; background: #1e1e1e; color: #d4d4d4; border: none; padding: 12px; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; line-height: 1.4; resize: vertical; outline: none; box-sizing: border-box; }
+        .code-output { padding: 12px; background: #1e1e1e; color: #d4d4d4; border: none; font-family: 'JetBrains Mono', monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; box-sizing: border-box; }
+        .code-output .pyodide-note { font-size: 11px; color: #999; margin-top: 6px; padding-top: 6px; border-top: 1px solid #444; }
+        .code-output.error { color: #ff6b6b; }
         .code-output img { max-width: 100%; border-radius: 4px; }
+
+        /* Fullscreen overlay */
+        .code-widget-fullscreen { position: fixed; inset: 0; z-index: 1000; background: #1e1e1e; display: flex; flex-direction: column; max-width: 100vw; max-height: 100vh; overflow: hidden; }
+        .code-widget-fullscreen .code-widget { border-radius: 0; border: none; height: 100%; max-width: 100%; max-height: 100%; }
+        .code-widget-fullscreen .code-widget-body { flex: 1; min-height: 0; }
+        .code-widget-fullscreen .code-widget-body iframe { height: 100%; max-width: 100%; }
+        .code-widget-fullscreen .code-source-area { max-height: none; height: 100%; resize: none; max-width: 100%; }
+        .code-widget-fullscreen .code-output { max-height: none; height: 100%; max-width: 100%; }
+        .fs-close-btn { background: var(--accent-rust); }
+        .fs-close-btn:hover { background: #a34a2a; }
 
         /* Load More */
         .load-more-btn { display: flex; align-items: center; justify-content: center; padding: 8px; margin: 8px 0; background: transparent; color: var(--text-secondary); border: var(--line-weight) dashed var(--border); border-radius: var(--radius); cursor: pointer; font-size: 13px; width: 100%; transition: all 0.2s; }
         .load-more-btn:hover { background: var(--accent-surface); color: var(--accent-teal); border-color: var(--accent-teal); }
 
         /* Replying Indicator */
-        .replying-indicator { align-self: flex-start; display: flex; align-items: center; gap: 12px; max-width: 80%; }
+        .replying-indicator { align-self: flex-start; display: flex; align-items: center; gap: 12px; max-width: 100%; }
         .replying-indicator .message-bubble { display: flex; align-items: center; gap: 10px; background: var(--bg-secondary); }
         .dots { display: flex; gap: 4px; }
         .dots span { width: 6px; height: 6px; background: var(--accent-teal); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
@@ -120,12 +136,20 @@
         .replying-indicator .text { font-size: 14px; color: var(--text-secondary); font-style: italic; }
 
         /* Input */
-        .input-area { padding: 16px 24px; border-top: var(--line-weight) solid var(--border); display: flex; gap: 12px; flex-shrink: 0; background: var(--bg-primary); }
-        .message-input { flex: 1; padding: 12px 16px; border: var(--line-weight) solid var(--border); border-radius: 8px; font-size: 15px; resize: none; font-family: inherit; background: white; outline: none; }
+        .input-area { padding: 16px 24px; border-top: var(--line-weight) solid var(--border); display: flex; gap: 12px; flex-shrink: 0; background: var(--bg-primary); max-width: 100%; box-sizing: border-box; }
+        .message-input { flex: 1; padding: 12px 16px; border: var(--line-weight) solid var(--border); border-radius: 8px; font-size: 15px; resize: none; font-family: inherit; background: white; outline: none; max-width: 100%; box-sizing: border-box; }
         .message-input:focus { border-color: var(--accent-teal); }
-        .send-btn { padding: 12px 20px; background: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .send-btn { padding: 12px 20px; background: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); border-radius: 8px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; flex-shrink: 0; }
         .send-btn:hover { background: #1f6b6b; }
         .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Model Selector */
+        .model-selector { display: flex; align-items: center; gap: 8px; padding: 0 24px 12px; border-top: var(--line-weight) solid var(--border); background: var(--bg-primary); flex-shrink: 0; flex-wrap: wrap; max-width: 100%; box-sizing: border-box; }
+        .model-selector label { font-size: 12px; color: var(--text-tertiary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+        .model-selector select { padding: 6px 10px; font-size: 13px; border: var(--line-weight) solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; outline: none; font-family: inherit; max-width: 100%; box-sizing: border-box; }
+        .model-selector select:focus { border-color: var(--accent-teal); }
+        .model-selector input { padding: 6px 10px; font-size: 13px; border: var(--line-weight) solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); color: var(--text-primary); outline: none; font-family: inherit; min-width: 140px; max-width: 100%; box-sizing: border-box; }
+        .model-selector input:focus { border-color: var(--accent-teal); }
 
         /* Empty State */
         .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--text-tertiary); }
@@ -239,8 +263,25 @@
         </div>
         <div class="messages-container hidden" id="messagesContainer"></div>
         <div class="input-area hidden" id="inputArea">
-            <textarea class="message-input" id="messageInput" rows="1" placeholder="Type a message... (use ```python for code)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
-            <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+            <div style="display:flex;flex-direction:column;gap:8px;flex:1;">
+                <div class="model-selector" id="modelSelector">
+                    <label for="providerSelect">Provider</label>
+                    <select id="providerSelect" onchange="onProviderChange()">
+                        <option value="kimi">Kimi</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="google">Google</option>
+                        <option value="augure">Augure</option>
+                        <option value="zai">Zai</option>
+                    </select>
+                    <label for="modelSelect">Model</label>
+                    <select id="modelSelect" style="min-width: 140px;"></select>
+                </div>
+                <div style="display:flex;gap:12px;">
+                    <textarea class="message-input" id="messageInput" rows="1" placeholder="Type a message... (use ```python for code)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
+                    <button class="send-btn" id="sendBtn" onclick="sendMessage()">Send</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -324,6 +365,100 @@ let token = localStorage.getItem('token');
 
 const API_KEY_PROVIDERS = ['kimi', 'anthropic', 'openai', 'google', 'augure', 'zai'];
 
+const DEFAULT_MODELS = {
+  kimi: 'kimi-k2.7',
+  anthropic: 'claude-sonnet-4-6',
+  openai: 'gpt-4o',
+  google: 'gemini-1.5-pro',
+  augure: 'augure',
+  zai: 'zai'
+};
+
+// Provider/model stored for the currently loaded conversation
+let currentConvProvider = null;
+let currentConvModel = null;
+
+function initModelSelector() {
+  const savedProvider = localStorage.getItem('lastProvider');
+  const savedModel = localStorage.getItem('lastModel');
+  const providerSelect = document.getElementById('providerSelect');
+  if (savedProvider && DEFAULT_MODELS[savedProvider]) {
+    providerSelect.value = savedProvider;
+  } else {
+    providerSelect.value = 'kimi';
+  }
+  loadModelsForProvider(providerSelect.value, savedModel || DEFAULT_MODELS[providerSelect.value] || null);
+}
+
+async function loadModelsForProvider(provider, preferredModel) {
+  const modelSelect = document.getElementById('modelSelect');
+  // Clear current options
+  modelSelect.innerHTML = '<option>Loading...</option>';
+  try {
+    const res = await fetch(`${API_BASE}/api/providers/${provider}/models`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      if (res.status === 401) { doLogout(); return; }
+      const text = await res.text().catch(() => res.status);
+      throw new Error(`Failed to load models (${res.status}): ${text}`);
+    }
+    const data = await res.json();
+    const models = data.models || [];
+    modelSelect.innerHTML = '';
+    if (models.length === 0) {
+      // Fallback to default if list is empty
+      const fallback = DEFAULT_MODELS[provider] || '';
+      if (fallback) {
+        const opt = document.createElement('option');
+        opt.value = fallback;
+        opt.textContent = fallback;
+        modelSelect.appendChild(opt);
+      }
+    } else {
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        modelSelect.appendChild(opt);
+      });
+    }
+    // Restore saved model if present in list, otherwise first option
+    const savedModel = preferredModel || localStorage.getItem('lastModel');
+    const optionValues = Array.from(modelSelect.options).map(o => o.value);
+    if (savedModel && optionValues.includes(savedModel)) {
+      modelSelect.value = savedModel;
+    } else if (modelSelect.options.length > 0) {
+      modelSelect.selectedIndex = 0;
+    }
+  } catch (e) {
+    console.error('loadModelsForProvider error:', e);
+    // On error, populate with default fallback
+    modelSelect.innerHTML = '';
+    const fallback = DEFAULT_MODELS[provider] || '';
+    if (fallback) {
+      const opt = document.createElement('option');
+      opt.value = fallback;
+      opt.textContent = fallback;
+      modelSelect.appendChild(opt);
+    }
+  }
+}
+
+function onProviderChange() {
+  const provider = document.getElementById('providerSelect').value;
+  localStorage.setItem('lastProvider', provider);
+  loadModelsForProvider(provider, null);
+}
+
+function getSelectedProvider() {
+  return document.getElementById('providerSelect').value;
+}
+
+function getSelectedModel() {
+  return document.getElementById('modelSelect').value || DEFAULT_MODELS[getSelectedProvider()] || '';
+}
+
 function showSettingsModal() {
   document.getElementById('settingsModal').classList.remove('hidden');
   loadApiKeys();
@@ -362,7 +497,8 @@ async function loadApiKeys() {
 
     container.innerHTML = rows;
   } catch (e) {
-    container.innerHTML = '<p class="error">Failed to load API keys.</p>';
+    console.error('loadApiKeys error:', e);
+    container.innerHTML = '<p class="error">Failed to load API keys: ' + (e.message || e) + '</p>';
   }
 }
 
@@ -404,6 +540,135 @@ let messageOffset = 0;
 let hasMoreMessages = false;
 const MESSAGE_PAGE_SIZE = 50;
 
+// ─── Code completion helpers ───
+function isIncompleteCode(text) {
+    // Count triple backticks; odd means an unclosed fenced code block
+    const backticks = (text.match(/```/g) || []).length;
+    if (backticks % 2 !== 0) return true;
+    return false;
+}
+
+function showContinueStatus(msgDiv, text) {
+    let status = msgDiv.querySelector('.continuation-status');
+    if (!status) {
+        status = document.createElement('div');
+        status.className = 'continuation-status';
+        status.style.cssText = 'font-size:12px;color:var(--text-tertiary);margin-top:4px;font-style:italic;';
+        msgDiv.appendChild(status);
+    }
+    status.textContent = text;
+}
+
+function removeContinueStatus(msgDiv) {
+    const status = msgDiv.querySelector('.continuation-status');
+    if (status) status.remove();
+}
+
+function addContinueButton(msgDiv, fullText) {
+    let btn = msgDiv.querySelector('.continue-btn');
+    if (btn) return;
+    btn = document.createElement('button');
+    btn.className = 'continue-btn';
+    btn.textContent = 'Continue';
+    btn.style.cssText = 'margin-top:8px;padding:4px 10px;font-size:12px;background:var(--accent-teal);color:white;border:none;border-radius:4px;cursor:pointer;';
+    btn.onclick = () => {
+        btn.remove();
+        continueAssistantResponse(msgDiv, fullText, true);
+    };
+    msgDiv.appendChild(btn);
+}
+
+async function continueAssistantResponse(assistantMsgDiv, currentFullText, isManual = false) {
+    if (!currentConversation) return;
+    if (!isManual && assistantMsgDiv.dataset.autoContinued === 'true') return; // already auto-continued once
+    if (!isManual) assistantMsgDiv.dataset.autoContinued = 'true';
+
+    showContinueStatus(assistantMsgDiv, 'Continuing...');
+    isSending = true;
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('messageInput').disabled = true;
+
+    let fullText = currentFullText;
+    try {
+        const provider = getSelectedProvider();
+        const model = getSelectedModel();
+        const response = await fetch(`${API_BASE}/api/conversations/${currentConversation}/stream`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: 'Continue from where you left off. Finish the code block you started.', model, provider })
+        });
+
+        if (!response.ok) {
+            throw new Error('Continuation failed: ' + response.status);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        streamLoop: while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';
+            for (const event of events) {
+                const lines = event.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const data = line.slice(6);
+                        if (data === '[DONE]') continue;
+                        try {
+                            const json = JSON.parse(data);
+                            if (json.error) {
+                                fullText += '\nError: ' + json.error;
+                                break streamLoop;
+                            }
+                            const delta = extractStreamDelta(json);
+                            if (delta) {
+                                fullText += delta;
+                                const bubble = assistantMsgDiv.querySelector('.message-bubble');
+                                if (bubble) bubble.textContent = fullText;
+                                const container = document.getElementById('messagesContainer');
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+        }
+
+        // Final formatting
+        const bubble = assistantMsgDiv.querySelector('.message-bubble');
+        if (bubble) {
+            if (!fullText.trim()) {
+                bubble.textContent = 'No continuation received.';
+            } else {
+                bubble.innerHTML = formatContent(fullText);
+                if (localStorage.getItem('fontMode') === 'bionic') {
+                    applyBionicToSingleMessage(assistantMsgDiv);
+                }
+            }
+        }
+
+        // If still incomplete after one auto-continuation, show manual button
+        if (!isManual && isIncompleteCode(fullText)) {
+            showContinueStatus(assistantMsgDiv, 'Response still incomplete.');
+            addContinueButton(assistantMsgDiv, fullText);
+        } else {
+            removeContinueStatus(assistantMsgDiv);
+        }
+    } catch (e) {
+        showContinueStatus(assistantMsgDiv, 'Could not continue. Click Continue to retry.');
+        addContinueButton(assistantMsgDiv, fullText);
+    } finally {
+        isSending = false;
+        document.getElementById('sendBtn').disabled = false;
+        document.getElementById('messageInput').disabled = false;
+        document.getElementById('messageInput').focus();
+    }
+}
+
 // ─── Pyodide ───
 async function initPyodide() {
     if (pyodide || pyodideLoading) return;
@@ -425,11 +690,9 @@ async function runPython(code, outputId) {
     outputEl.classList.remove('error');
     let output = '';
     try {
-        // Set up stdout/stderr capture
         pyodide.setStdout({ batched: (s) => { output += s; } });
         pyodide.setStderr({ batched: (s) => { output += s; } });
-        
-        // Handle matplotlib - redirect to output div
+
         if (code.includes('matplotlib') || code.includes('plt.')) {
             await pyodide.runPythonAsync(`
 import matplotlib
@@ -449,11 +712,10 @@ def show():
 plt.show = show
 `);
         }
-        
+
         await pyodide.loadPackagesFromImports(code);
         const result = await pyodide.runPythonAsync(code);
-        
-        // Check if result is an image (matplotlib show)
+
         if (typeof result === 'string' && result.startsWith('<img')) {
             outputEl.innerHTML = output + result;
         } else if (result !== undefined && result !== null) {
@@ -467,113 +729,70 @@ plt.show = show
     }
 }
 
-const htmlPreviewStore = {};
-let htmlPreviewCounter = 0;
+const widgetStore = {};
+let widgetCounter = 0;
 
-function switchTab(previewId, mode) {
-    const codePanel = document.getElementById('code-' + previewId);
-    const previewPanel = document.getElementById('preview-' + previewId);
-    if (!codePanel || !previewPanel) return;
-    const tabs = codePanel.parentElement.querySelectorAll('.tab-btn');
-    if (mode === 'code') {
-        codePanel.style.display = 'block';
-        previewPanel.style.display = 'none';
-        if (tabs[0]) tabs[0].classList.add('active');
-        if (tabs[1]) tabs[1].classList.remove('active');
+function getWidget(id) {
+    return widgetStore[id];
+}
+
+function setWidget(id, data) {
+    widgetStore[id] = data;
+}
+
+function switchWidgetTab(widgetId, mode) {
+    const widget = document.getElementById('widget-' + widgetId);
+    if (!widget) return;
+    const tabs = widget.querySelectorAll('.code-widget-tabs button[data-tab]');
+    const panels = widget.querySelectorAll('.code-widget-panel');
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === mode));
+    panels.forEach(p => p.classList.toggle('active', p.dataset.panel === mode));
+    const data = getWidget(widgetId);
+    if (!data) return;
+    if (data.type === 'html' && mode === 'preview') {
+        const textarea = document.getElementById('source-' + widgetId);
+        const iframe = document.getElementById('iframe-' + widgetId);
+        if (textarea && iframe) {
+            data.code = textarea.value;
+            iframe.srcdoc = textarea.value;
+        }
+    }
+    if (data.type === 'python' && mode === 'run') {
+        const textarea = document.getElementById('source-' + widgetId);
+        const outputEl = document.getElementById('output-' + widgetId);
+        if (textarea && outputEl) {
+            data.code = textarea.value;
+            runPython(textarea.value, 'output-' + widgetId);
+        }
+    }
+}
+
+function toggleFullscreen(widgetId) {
+    const widget = document.getElementById('widget-' + widgetId);
+    if (!widget) return;
+    const isFullscreen = widget.classList.contains('code-widget-fullscreen');
+    if (isFullscreen) {
+        widget.classList.remove('code-widget-fullscreen');
+        const closeBtn = widget.querySelector('.fs-close-btn');
+        if (closeBtn) closeBtn.textContent = 'Fullscreen';
     } else {
-        codePanel.style.display = 'none';
-        previewPanel.style.display = 'block';
-        if (tabs[0]) tabs[0].classList.remove('active');
-        if (tabs[1]) tabs[1].classList.add('active');
-        if (!previewPanel.querySelector('iframe')) {
-            const code = htmlPreviewStore[previewId];
-            if (code) {
-                const iframe = document.createElement('iframe');
-                iframe.style.cssText = 'width:100%;height:300px;border:none;';
-                iframe.sandbox = 'allow-scripts';
-                const blob = new Blob([code], { type: 'text/html' });
-                iframe.src = URL.createObjectURL(blob);
-                previewPanel.appendChild(iframe);
-            }
-        }
+        widget.classList.add('code-widget-fullscreen');
+        const closeBtn = widget.querySelector('.fs-close-btn');
+        if (closeBtn) closeBtn.textContent = 'Close';
     }
 }
 
-function fullScreenHTML(previewId) {
-    const code = htmlPreviewStore[previewId];
-    if (!code) return;
-    const blob = new Blob([code], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.code-widget-fullscreen').forEach(w => {
+            const id = w.id.replace('widget-', '');
+            toggleFullscreen(id);
+        });
+    }
+});
 
-function previewHTML(previewId) {
-    console.log('previewHTML called', previewId, htmlPreviewStore[previewId] ? 'code found' : 'code NOT found');
-    const outputEl = document.getElementById(previewId);
-    const code = htmlPreviewStore[previewId];
-    if (!outputEl || !code) return;
-    
-    outputEl.style.display = 'block';
-    outputEl.innerHTML = '';
-    
-    // Header bar with label + Full screen + Close
-    const header = document.createElement('div');
-    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
-    
-    const label = document.createElement('span');
-    label.style.cssText = 'font-size:11px;color:var(--text-tertiary);';
-    label.textContent = 'Preview';
-    
-    const right = document.createElement('div');
-    const fsBtn = document.createElement('button');
-    fsBtn.style.cssText = 'font-size:11px;background:none;border:none;color:var(--text-tertiary);cursor:pointer;margin-right:8px;';
-    fsBtn.textContent = '⛶ Full screen';
-    fsBtn.onclick = () => {
-        const blob = new Blob([code], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-    };
-    
-    const closeBtn = document.createElement('button');
-    closeBtn.style.cssText = 'font-size:11px;background:none;border:none;color:var(--text-tertiary);cursor:pointer;';
-    closeBtn.textContent = '✕ Close';
-    closeBtn.onclick = () => { outputEl.style.display = 'none'; };
-    
-    right.appendChild(fsBtn);
-    right.appendChild(closeBtn);
-    header.appendChild(label);
-    header.appendChild(right);
-    outputEl.appendChild(header);
-    
-    // Sandboxed iframe
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'width:100%;height:300px;border:1px solid var(--border);border-radius:4px;background:white;';
-    iframe.sandbox = 'allow-scripts';
-    iframe.srcdoc = code;
-    outputEl.appendChild(iframe);
-}
-
-// ─── Event Delegation for dynamic code blocks ───
+// Legacy event delegation for dynamic Python run buttons (old widgets)
 document.addEventListener('click', function(e) {
-    // Tab buttons (Code / Preview / Full screen)
-    const tabBtn = e.target.closest('[data-tab-id]');
-    if (tabBtn) {
-        const tabId = tabBtn.dataset.tabId;
-        const tabMode = tabBtn.dataset.tabMode;
-        const tabAction = tabBtn.dataset.tabAction;
-        if (tabMode) {
-            switchTab(tabId, tabMode);
-            return;
-        }
-        if (tabAction === 'fullscreen') {
-            fullScreenHTML(tabId);
-            return;
-        }
-    }
-    
-    // Python run button
     const runBtn = e.target.closest('[data-python-run]');
     if (runBtn) {
         const code = decodeURIComponent(runBtn.dataset.pythonCode);
@@ -584,7 +803,7 @@ document.addEventListener('click', function(e) {
 
 // ─── Auth ───
 if (!token) { document.getElementById('loginModal').classList.remove('hidden'); }
-else { fetchUser(); loadConversations(); }
+else { fetchUser(); loadConversations(); initModelSelector(); }
 
 // Restore font mode
 const savedFontMode = localStorage.getItem('fontMode') || 'default';
@@ -605,7 +824,7 @@ async function doLogin() {
             res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p }) });
         }
         const data = await res.json();
-        if (res.ok) { token = data.access_token; localStorage.setItem('token', token); document.getElementById('loginModal').classList.add('hidden'); fetchUser(); loadConversations(); }
+        if (res.ok) { token = data.access_token; localStorage.setItem('token', token); document.getElementById('loginModal').classList.add('hidden'); fetchUser(); loadConversations(); initModelSelector(); }
         else { document.getElementById('loginError').textContent = data.error || 'Login failed'; }
     } catch (e) { document.getElementById('loginError').textContent = 'Connection failed'; }
 }
@@ -773,7 +992,9 @@ async function updateConversationColor(id, color) {
 async function createNewChat() {
     if (!token) { document.getElementById('loginModal').classList.remove('hidden'); return; }
     try {
-        const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New Chat' }) });
+        const provider = getSelectedProvider();
+        const model = getSelectedModel();
+        const res = await fetch(`${API_BASE}/api/conversations`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'New Chat', provider, model }) });
         if (!res.ok) { if (res.status === 401) doLogout(); return; }
         const conv = await res.json();
         currentConversation = conv.id;
@@ -827,6 +1048,31 @@ async function loadConversation(id, append = false) {
         }
         if (!append) { container.scrollTop = container.scrollHeight; }
         loadConversations();
+        // Update provider/model selector from conversation settings
+        currentConvProvider = conv.provider || null;
+        currentConvModel = conv.model || null;
+        if (conv.provider) {
+            const providerSelect = document.getElementById('providerSelect');
+            if (providerSelect) {
+                providerSelect.value = conv.provider;
+            }
+            await loadModelsForProvider(conv.provider, conv.model || null);
+            localStorage.setItem('lastProvider', conv.provider);
+            if (conv.model) {
+                localStorage.setItem('lastModel', conv.model);
+            }
+        } else {
+            // Old conversation without provider/model: adopt current selector values
+            const provider = getSelectedProvider();
+            const model = getSelectedModel();
+            currentConvProvider = provider;
+            currentConvModel = model;
+            fetch(`${API_BASE}/api/conversations/${conv.id}/settings`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, model })
+            }).catch(() => {});
+        }
         if (localStorage.getItem('fontMode') === 'bionic') {
             document.querySelectorAll('.message').forEach(msg => applyBionicToSingleMessage(msg));
         }
@@ -959,47 +1205,74 @@ function hideReplying() {
 function formatContent(text) {
     // Extract code blocks BEFORE escaping HTML
     const codeBlocks = [];
-    
+
     // Extract HTML blocks first (before generic catch-all)
     text = text.replace(/```html\n([\s\S]*?)```/g, (match, code) => {
-        const previewId = 'html-preview-' + (++htmlPreviewCounter);
-        htmlPreviewStore[previewId] = code;
+        const widgetId = 'html-' + (++widgetCounter);
+        setWidget(widgetId, { type: 'html', code: code });
         const placeholder = `\x00CODEBLOCK_${codeBlocks.length}_\x00`;
         codeBlocks.push({
             type: 'html',
             placeholder,
             html: `<div class="code-block">
-                <div class="code-tabs">
-                    <button class="tab-btn active" data-tab-id="${previewId}" data-tab-mode="code">Code</button>
-                    <button class="tab-btn" data-tab-id="${previewId}" data-tab-mode="preview">Preview</button>
-                    <button class="tab-btn" data-tab-id="${previewId}" data-tab-action="fullscreen" style="margin-left:auto;">⛶</button>
+                <div class="code-widget" id="widget-${widgetId}">
+                    <div class="code-widget-header">
+                        <div class="code-widget-tabs">
+                            <button class="active" data-tab="source" onclick="switchWidgetTab('${widgetId}','source')">Source</button>
+                            <button data-tab="preview" onclick="switchWidgetTab('${widgetId}','preview')">Preview</button>
+                        </div>
+                        <div class="code-widget-actions">
+                            <button class="fs-close-btn" onclick="toggleFullscreen('${widgetId}')">Fullscreen</button>
+                        </div>
+                    </div>
+                    <div class="code-widget-body">
+                        <div class="code-widget-panel active" data-panel="source">
+                            <textarea class="code-source-area" id="source-${widgetId}">${escapeForTextarea(code)}</textarea>
+                        </div>
+                        <div class="code-widget-panel" data-panel="preview">
+                            <iframe id="iframe-${widgetId}" sandbox="allow-scripts"></iframe>
+                        </div>
+                    </div>
                 </div>
-                <div class="tab-panel" id="code-${previewId}">
-                    <pre><code>${escapeHtml(code)}</code></pre>
-                </div>
-                <div class="tab-panel" id="preview-${previewId}" style="display:none;"></div>
             </div>`
         });
         return placeholder;
     });
-    
+
     // Extract python blocks
     text = text.replace(/```python\n([\s\S]*?)```/g, (match, code) => {
-        const id = 'py-' + Math.random().toString(36).substr(2, 9);
+        const widgetId = 'python-' + (++widgetCounter);
+        setWidget(widgetId, { type: 'python', code: code });
         const placeholder = `\x00CODEBLOCK_${codeBlocks.length}_\x00`;
         codeBlocks.push({
             type: 'python',
             placeholder,
             html: `<div class="code-block">
-                <button class="run-btn" data-python-run data-python-code="${encodeURIComponent(code)}" data-output-id="${id}">▶ Run</button>
-                <pre><code>${escapeHtml(code)}</code></pre>
-                <div class="code-output" id="${id}"></div>
-                <div class="pyodide-note">Available: numpy, pandas, scipy, matplotlib, scikit-learn, sympy, Pillow. No PyTorch or TensorFlow.</div>
+                <div class="code-widget" id="widget-${widgetId}">
+                    <div class="code-widget-header">
+                        <div class="code-widget-tabs">
+                            <button class="active" data-tab="source" onclick="switchWidgetTab('${widgetId}','source')">Source</button>
+                            <button data-tab="run" onclick="switchWidgetTab('${widgetId}','run')">Run</button>
+                        </div>
+                        <div class="code-widget-actions">
+                            <button class="fs-close-btn" onclick="toggleFullscreen('${widgetId}')">Fullscreen</button>
+                        </div>
+                    </div>
+                    <div class="code-widget-body">
+                        <div class="code-widget-panel active" data-panel="source">
+                            <textarea class="code-source-area" id="source-${widgetId}">${escapeForTextarea(code)}</textarea>
+                        </div>
+                        <div class="code-widget-panel" data-panel="run">
+                            <div class="code-output" id="output-${widgetId}"></div>
+                            <div class="pyodide-note">Available: numpy, pandas, scipy, matplotlib, scikit-learn, sympy, Pillow. No PyTorch or TensorFlow.</div>
+                        </div>
+                    </div>
+                </div>
             </div>`
         });
         return placeholder;
     });
-    
+
     // Generic code blocks (catch-all, after specific ones)
     text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
         const placeholder = `\x00CODEBLOCK_${codeBlocks.length}_\x00`;
@@ -1010,24 +1283,24 @@ function formatContent(text) {
         });
         return placeholder;
     });
-    
+
     // Now escape the remaining text
     text = escapeHtml(text);
-    
-    // Restore code blocks
+
+    // Inline code
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Bold
+    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    // Newlines (only in non-code text; code blocks are still placeholders)
+    text = text.replace(/\n/g, '<br>');
+
+    // Restore code blocks after newline conversion so textarea newlines stay intact
     codeBlocks.forEach(block => {
         text = text.replace(block.placeholder, block.html);
     });
-    
-    // Inline code
-    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-    
-    // Bold
-    text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    
-    // Newlines
-    text = text.replace(/\n/g, '<br>');
-    
+
     return text;
 }
 
@@ -1035,6 +1308,15 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Escape text for placing inside a <textarea>; preserves literal newlines.
+function escapeForTextarea(text) {
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 function extractStreamDelta(json) {
@@ -1076,6 +1358,11 @@ async function sendMessage() {
     const content = input.value.trim();
     if (!content) return;
 
+    const provider = getSelectedProvider();
+    const model = getSelectedModel();
+    localStorage.setItem('lastProvider', provider);
+    localStorage.setItem('lastModel', model);
+
     // Handle /compact command — non-streaming
     if (content.toLowerCase() === '/compact') {
         input.value = ''; input.rows = 1;
@@ -1106,10 +1393,38 @@ async function sendMessage() {
     showReplying();
 
     try {
+        let provider = getSelectedProvider();
+        let model = getSelectedModel();
+        // Guard against the model dropdown still showing the loading placeholder
+        if (model === 'Loading...' || !model) {
+            model = DEFAULT_MODELS[provider] || '';
+        }
+        localStorage.setItem('lastProvider', provider);
+        localStorage.setItem('lastModel', model);
+
+        // Only persist provider/model if the user actually changed them
+        const providerChanged = provider !== currentConvProvider;
+        const modelChanged = model !== currentConvModel;
+        if (providerChanged || modelChanged) {
+            currentConvProvider = provider;
+            currentConvModel = model;
+            fetch(`${API_BASE}/api/conversations/${currentConversation}/settings`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, model })
+            }).catch(() => {});
+        }
+
+        const streamBody = { content };
+        if (providerChanged || modelChanged) {
+            streamBody.model = model;
+            streamBody.provider = provider;
+        }
+
         const response = await fetch(`${API_BASE}/api/conversations/${currentConversation}/stream`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content, model: 'kimi-k2.6', provider: 'kimi' })
+            body: JSON.stringify(streamBody)
         });
         
         if (!response.ok) {
@@ -1128,25 +1443,29 @@ async function sendMessage() {
         let buffer = '';
         let fullText = '';
         
-        while (true) {
+        streamLoop: while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            
+
             buffer += decoder.decode(value, { stream: true });
-            
+
             // Parse SSE events
             const events = buffer.split('\n\n');
             buffer = events.pop() || '';
-            
+
             for (const event of events) {
                 const lines = event.split('\n');
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const data = line.slice(6);
                         if (data === '[DONE]') continue;
-                        
+
                         try {
                             const json = JSON.parse(data);
+                            if (json.error) {
+                                fullText = 'Error: ' + json.error;
+                                break streamLoop;
+                            }
                             const delta = extractStreamDelta(json);
                             if (delta) {
                                 fullText += delta;
@@ -1170,14 +1489,23 @@ async function sendMessage() {
         // Apply formatting after stream is complete
         const bubble = msgDiv.querySelector('.message-bubble');
         if (bubble) {
-            bubble.innerHTML = formatContent(fullText);
-            if (localStorage.getItem('fontMode') === 'bionic') {
-                applyBionicToSingleMessage(msgDiv);
+            if (!fullText.trim()) {
+                bubble.textContent = 'No response received.';
+            } else {
+                bubble.innerHTML = formatContent(fullText);
+                if (localStorage.getItem('fontMode') === 'bionic') {
+                    applyBionicToSingleMessage(msgDiv);
+                }
             }
         }
-        
+
         // Remove the streaming ID to match normal messages
         msgDiv.removeAttribute('id');
+
+        // Auto-continue if the response ends inside an unclosed code block
+        if (isIncompleteCode(fullText)) {
+            await continueAssistantResponse(msgDiv, fullText);
+        }
     } catch (e) {
         hideReplying();
         appendMessage('assistant', 'Error: Could not get response. Please check your API key configuration.');

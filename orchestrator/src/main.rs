@@ -12,7 +12,7 @@ mod terminal_agent;
 
 use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
 use axum::{
-    routing::{get, post, delete, patch},
+    routing::{get, post, delete, patch, put},
     Router,
     extract::Path,
 };
@@ -90,8 +90,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/refresh", post(api::refresh_token))
         .route("/api/keys", get(api::list_api_keys).post(api::set_api_key))
         .route("/api/keys/:provider", delete(api::delete_api_key))
+        .route("/api/providers/:provider/models", get(api::list_provider_models))
         .route("/api/conversations", get(api::list_conversations).post(api::create_conversation))
         .route("/api/conversations/:id", get(api::get_conversation).delete(api::delete_conversation))
+        .route("/api/conversations/:id/settings", put(api::set_conversation_settings))
         .route("/api/conversations/:id/messages", get(api::get_messages).post(api::send_message))
         .route("/api/conversations/:id/stream", post(api::stream_conversation))
         .route("/api/conversations/:id/compact", post(api::compact_conversation))

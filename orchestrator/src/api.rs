@@ -208,12 +208,202 @@ fn get_provider_endpoint(provider: &str) -> String {
     }
 }
 
+/// Return a model-appropriate max_tokens value.
+fn get_model_max_tokens(provider: &str, model: &str) -> i64 {
+    let model_lc = model.to_lowercase();
+    match provider {
+        "kimi" => 256_000,
+        "anthropic" => {
+            if model_lc.contains("opus") {
+                16_384
+            } else if model_lc.contains("sonnet") {
+                8_192
+            } else {
+                4_096
+            }
+        }
+        "openai" => {
+            if model_lc.starts_with("gpt-4o") {
+                16_384
+            } else if model_lc.starts_with("gpt-4") {
+                8_192
+            } else {
+                4_096
+            }
+        }
+        "google" => 8_192,
+        "augure" => 16_384,
+        "zai" => 8_192,
+        _ => 8_192,
+    }
+}
+
+/// Return the models list endpoint URL for a given provider.
+fn get_provider_models_endpoint(provider: &str) -> Option<String> {
+    match provider {
+        "openai" => Some("https://api.openai.com/v1/models".to_string()),
+        "augure" => Some("https://api.augureai.ca/v1/models".to_string()),
+        "zai" => Some("https://api.zai.com/v1/models".to_string()),
+        "kimi" => Some("https://api.kimi.com/coding/v1/models".to_string()),
+        "google" => Some("https://generativelanguage.googleapis.com/v1beta/models".to_string()),
+        "anthropic" => None,
+        _ => Some(format!("https://api.{}.com/v1/models", provider)),
+    }
+}
+
+/// Return hardcoded fallback models for a provider.
+fn get_default_models(provider: &str) -> Vec<String> {
+    match provider {
+        "kimi" => vec![
+            "kimi-k2.7".to_string(),
+            "kimi-k2.6".to_string(),
+            "kimi-k2.5".to_string(),
+            "kimi-k2.5-20251001".to_string(),
+        ],
+        "anthropic" => vec![
+            "claude-sonnet-4-6".to_string(),
+            "claude-opus-4-8".to_string(),
+            "claude-haiku-4-5-20251001".to_string(),
+        ],
+        "openai" => vec![
+            "gpt-4o".to_string(),
+            "gpt-4o-mini".to_string(),
+            "gpt-4-turbo".to_string(),
+        ],
+        "google" => vec![
+            "gemini-1.5-pro".to_string(),
+            "gemini-1.5-flash".to_string(),
+        ],
+        "augure" => vec![
+            "augure".to_string(),
+        ],
+        "zai" => vec![
+            "zai".to_string(),
+        ],
+        _ => vec!["default".to_string()],
+    }
+}
+
+pub async fn list_provider_models(
+    State(state): State<Arc<AppState>>,
+    Path(provider): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Read API key
+    let keys = state.api_keys.read().await;
+    let api_key = keys
+        .get(&provider)
+        .cloned()
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": format!("No API key for provider: {}", provider) })),
+            )
+        })?;
+    drop(keys);
+
+    // Anthropic has no public models endpoint
+    if provider == "anthropic" {
+        return Ok(Json(serde_json::json!({
+            "models": get_default_models("anthropic")
+        })));
+    }
+
+    let client = reqwest::Client::new();
+
+    // Try primary endpoint
+    let mut endpoints: Vec<String> = Vec::new();
+    if let Some(ep) = get_provider_models_endpoint(&provider) {
+        endpoints.push(ep);
+    }
+    // Kimi fallback
+    if provider == "kimi" {
+        endpoints.push("https://api.kimi.com/v1/models".to_string());
+    }
+
+    let mut last_error = None;
+
+    for endpoint in &endpoints {
+        let mut req = client.get(endpoint);
+        if provider == "google" {
+            req = req.query(&[("key", &api_key)]);
+        } else {
+            req = req.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        match req.send().await {
+            Ok(resp) => {
+                if !resp.status().is_success() {
+                    last_error = Some(format!("HTTP {}", resp.status()));
+                    continue;
+                }
+                match resp.json::<serde_json::Value>().await {
+                    Ok(json) => {
+                        let models = parse_models_response(&provider, &json);
+                        if !models.is_empty() {
+                            return Ok(Json(serde_json::json!({ "models": models })));
+                        }
+                        last_error = Some("Empty model list".to_string());
+                    }
+                    Err(e) => {
+                        last_error = Some(format!("JSON parse error: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                last_error = Some(format!("Request failed: {}", e));
+            }
+        }
+    }
+
+    tracing::warn!(
+        "Failed to fetch models for provider {}: {:?}. Using fallback.",
+        provider,
+        last_error
+    );
+
+    Ok(Json(serde_json::json!({
+        "models": get_default_models(&provider)
+    })))
+}
+
+fn parse_models_response(provider: &str, json: &serde_json::Value) -> Vec<String> {
+    if provider == "google" {
+        // Google format: { "models": [{ "name": "models/gemini-1.5-pro" }] }
+        json.get("models")
+            .and_then(|m| m.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| {
+                        item.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.strip_prefix("models/").unwrap_or(s).to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        // OpenAI-compatible format: { "data": [{ "id": "gpt-4o" }] }
+        json.get("data")
+            .and_then(|d| d.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.get("id").and_then(|id| id.as_str()).map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
 // === Conversations ===
 
 #[derive(Deserialize)]
 pub struct CreateConversationRequest {
     #[serde(default)]
     pub title: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 pub async fn list_conversations(
@@ -265,7 +455,7 @@ pub async fn create_conversation(
 
     let conv = state
         .chat_db
-        .create_conversation(&claims.sub, req.title.as_deref().unwrap_or("New Chat"))
+        .create_conversation(&claims.sub, req.title.as_deref().unwrap_or("New Chat"), req.provider.as_deref(), req.model.as_deref())
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(conv))
@@ -651,6 +841,7 @@ pub async fn send_message(
     // Call Kimi API (or other provider)
     let client = reqwest::Client::new();
     let endpoint = get_provider_endpoint(&provider);
+    let max_tokens = get_model_max_tokens(&provider, &model);
     let response = client
         .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -659,7 +850,7 @@ pub async fn send_message(
             "model": model,
             "messages": llm_messages,
             "stream": false,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
         }))
         .send()
         .await
@@ -748,8 +939,19 @@ pub async fn stream_conversation(
         serde_json::json!({ "role": m.role, "content": m.content })
     }));
 
-    let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
-    let model = req.model.unwrap_or_else(|| "kimi-k2.6".to_string());
+    // Determine provider and model: request overrides > stored > defaults
+    let (provider, model) = if req.provider.is_some() || req.model.is_some() {
+        let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
+        let model = req.model.unwrap_or_else(|| "kimi-k2.7".to_string());
+        // Persist to conversation
+        let _ = state.chat_db.set_conversation_provider_model(&id, &claims.sub, &provider, &model);
+        (provider, model)
+    } else {
+        match state.chat_db.get_conversation_provider_model(&id, &claims.sub).ok().flatten() {
+            Some((p, m)) => (p, m),
+            None => ("kimi".to_string(), "kimi-k2.7".to_string()),
+        }
+    };
 
     let keys = state.api_keys.read().await;
     let api_key = keys.get(&provider).cloned()
@@ -761,6 +963,20 @@ pub async fn stream_conversation(
     tokio::spawn(async move {
         let client = reqwest::Client::new();
         let endpoint = get_provider_endpoint(&provider);
+        tracing::info!("Streaming chat request: provider={}, model={}, endpoint={}", provider, model, endpoint);
+
+        // Create an empty assistant message at the start of the stream.
+        let assistant_msg = match state.chat_db.add_message(&id, &claims.sub, "assistant", "") {
+            Ok(msg) => msg,
+            Err(e) => {
+                tracing::error!("Failed to create assistant message: {}", e);
+                let _ = tx.send(Ok(Event::default().data(format!("{{\"error\": \"Failed to persist message: {}\"}}", e))));
+                return;
+            }
+        };
+        let assistant_msg_id = assistant_msg.id;
+
+        let max_tokens = get_model_max_tokens(&provider, &model);
         let response = client.post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
@@ -768,7 +984,7 @@ pub async fn stream_conversation(
                 "model": model,
                 "messages": llm_messages,
                 "stream": true,
-                "max_tokens": 4096,
+                "max_tokens": max_tokens,
             }))
             .send()
             .await;
@@ -776,54 +992,82 @@ pub async fn stream_conversation(
         let mut response = match response {
             Ok(r) => r,
             Err(e) => {
+                tracing::error!("LLM request failed: {}", e);
+                let err_text = format!("Error: {}", e);
                 let _ = tx.send(Ok(Event::default().data(format!("{{\"error\": \"{}\"}}", e))));
-                let _ = state.chat_db.add_message(&id, &claims.sub, "assistant", &format!("Error: {}", e));
+                let _ = state.chat_db.update_message(&assistant_msg_id, &err_text);
                 return;
             }
         };
 
         // Check HTTP status
+        tracing::info!("LLM response status: {}", response.status());
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            tracing::error!("LLM error response: status={}, body={}", status, body);
             let err = format!("LLM returned {}: {}", status, body);
             let _ = tx.send(Ok(Event::default().data(format!("{{\"error\": \"{}\"}}", err))));
-            let _ = state.chat_db.add_message(&id, &claims.sub, "assistant", &err);
+            let _ = state.chat_db.update_message(&assistant_msg_id, &err);
             return;
         }
 
         let mut full_text = String::new();
         let mut buffer = String::new();
+        let mut chunk_count = 0;
+        let mut last_persisted_len = 0;
 
-        while let Ok(Some(chunk)) = response.chunk().await {
-            buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-            // Process complete lines
-            while let Some(pos) = buffer.find('\n') {
-                let line = buffer[..pos].trim_end_matches('\r').to_string();
-                buffer = buffer[pos + 1..].to_string();
-
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
-                    if data == "[DONE]" {
-                        continue;
+        loop {
+            match response.chunk().await {
+                Ok(Some(chunk)) => {
+                    chunk_count += 1;
+                    let chunk_str = String::from_utf8_lossy(&chunk);
+                    if chunk_count <= 5 {
+                        tracing::info!("LLM chunk {}: {}", chunk_count, chunk_str);
                     }
+                    buffer.push_str(&chunk_str);
 
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                        if let Some(content) = extract_stream_delta(&json) {
-                            full_text.push_str(&content);
+                    // Process complete lines
+                    while let Some(pos) = buffer.find('\n') {
+                        let line = buffer[..pos].trim_end_matches('\r').to_string();
+                        buffer = buffer[pos + 1..].to_string();
+
+                        if let Some(data) = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")) {
+                            if data == "[DONE]" {
+                                continue;
+                            }
+
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                                if let Some(content) = extract_stream_delta(&json) {
+                                    full_text.push_str(&content);
+                                }
+                            }
+
+                            // Forward the SSE event
+                            let _ = tx.send(Ok(Event::default().data(data)));
                         }
                     }
 
-                    // Forward the SSE event
-                    let _ = tx.send(Ok(Event::default().data(data)));
+                    // Persist periodically when content length changes meaningfully
+                    if full_text.len() > last_persisted_len {
+                        let _ = state.chat_db.update_message(&assistant_msg_id, &full_text);
+                        last_persisted_len = full_text.len();
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    let err = format!("Stream error: {}", e);
+                    let _ = tx.send(Ok(Event::default().data(format!("{{\"error\": \"{}\"}}", err))));
+                    let _ = state.chat_db.update_message(&assistant_msg_id, &err);
+                    return;
                 }
             }
         }
 
-        // Save the full assistant message
+        // Save the final assistant message
+        tracing::info!("LLM stream complete: chunks={}, full_text_len={}", chunk_count, full_text.len());
         if !full_text.is_empty() {
-            let _ = state.chat_db.add_message(&id, &claims.sub, "assistant", &full_text);
+            let _ = state.chat_db.update_message(&assistant_msg_id, &full_text);
         }
     });
 
@@ -941,6 +1185,7 @@ pub async fn chat_stream(
 
     let client = reqwest::Client::new();
     let endpoint = get_provider_endpoint(&provider);
+    let max_tokens = get_model_max_tokens(&provider, &model);
     let response = client
         .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
@@ -949,7 +1194,7 @@ pub async fn chat_stream(
             "model": model,
             "messages": llm_messages,
             "stream": false,
-            "max_tokens": 4096,
+            "max_tokens": max_tokens,
         }))
         .send()
         .await
@@ -1067,6 +1312,7 @@ async fn handle_chat_ws(
                     // Non-streaming for WebSocket simplicity
                     let client = reqwest::Client::new();
                     let endpoint = get_provider_endpoint(&provider);
+                    let max_tokens = get_model_max_tokens(&provider, &model);
                     if let Ok(response) = client
                         .post(&endpoint)
                         .header("Authorization", format!("Bearer {}", api_key))
@@ -1075,7 +1321,7 @@ async fn handle_chat_ws(
                             "model": model,
                             "messages": llm_messages,
                             "stream": false,
-                            "max_tokens": 4096,
+                            "max_tokens": max_tokens,
                         }))
                         .send()
                         .await
@@ -1204,6 +1450,40 @@ pub async fn delete_user(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct ConversationSettingsRequest {
+    pub provider: String,
+    pub model: String,
+}
+
+pub async fn set_conversation_settings(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(id): Path<String>,
+    Json(req): Json<ConversationSettingsRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let token = extract_token(&headers)?;
+    let auth = state.auth.read().await;
+    let claims = auth
+        .validate_token(&token)
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
+    drop(auth);
+
+    let role = claims.role.as_deref().unwrap_or("admin");
+    let user_role = crate::chat_db::UserRole::parse(role);
+    state
+        .chat_db
+        .get_or_create_user_from_claims(&claims.sub, None, user_role)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    state
+        .chat_db
+        .set_conversation_provider_model(&id, &claims.sub, &req.provider, &req.model)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"status": "updated"})))
 }
 
 pub async fn set_conversation_system_prompt(
