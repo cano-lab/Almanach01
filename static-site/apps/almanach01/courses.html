@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Catalog — Almanach</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .header {
+            background: #16213e;
+            border-bottom: 1px solid #0f3460;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.5rem; color: #e94560; }
+        .header a { color: #a0a0a0; text-decoration: none; font-size: 0.9rem; }
+        .header a:hover { color: #eee; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .page-title { font-size: 2rem; margin-bottom: 0.5rem; }
+        .subtitle { color: #a0a0a0; margin-bottom: 2rem; }
+        .loading, .error, .empty {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #a0a0a0;
+        }
+        .error { color: #e94560; }
+        .course-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+        .course-card {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .course-card:hover {
+            transform: translateY(-2px);
+            border-color: #e94560;
+        }
+        .course-header { margin-bottom: 1rem; }
+        .course-header h3 { font-size: 1.25rem; color: #eee; margin-bottom: 0.25rem; }
+        .course-title-en { color: #a0a0a0; font-size: 0.9rem; }
+        .course-meta {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .badge {
+            background: #0f3460;
+            color: #a0a0a0;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        .course-description {
+            color: #c0c0c0;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+        .btn {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: #c73a52; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
+        .success-message {
+            background: #1a3a2e;
+            border: 1px solid #2a5a3e;
+            color: #4ade80;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            text-align: center;
+        }
+        .auth-notice {
+            background: #2a1a1e;
+            border: 1px solid #5a3a3e;
+            color: #f0a0a0;
+            padding: 0.75rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🦀 Almanach</h1>
+        <a href="/apps/almanach01/">← Back to App</a>
+    </div>
+    <div class="container">
+        <h2 class="page-title">📚 Course Catalog</h2>
+        <p class="subtitle">Browse and enroll in available courses</p>
+        <div id="content">
+            <div class="loading">Loading courses...</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        const token = localStorage.getItem('almanach_token');
+
+        async function fetchCourses() {
+            try {
+                const response = await fetch(`${API_BASE}/api/courses`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const courses = await response.json();
+                renderCourses(courses);
+            } catch (err) {
+                document.getElementById('content').innerHTML = 
+                    `<div class="error">Failed to load courses: ${err.message}</div>`;
+            }
+        }
+
+        function renderCourses(courses) {
+            if (!courses || courses.length === 0) {
+                document.getElementById('content').innerHTML = 
+                    `<div class="empty">No courses available yet. Check back soon!</div>`;
+                return;
+            }
+
+            const isLoggedIn = !!token;
+            let html = '';
+            if (!isLoggedIn) {
+                html += `<div class="auth-notice">🔒 You are not logged in. Enrolling requires authentication. <a href="/apps/almanach01/" style="color:#e94560;">Log in first</a></div>`;
+            }
+
+            html += '<div class="course-grid">';
+            for (const course of courses) {
+                html += `
+                    <div class="course-card">
+                        <div class="course-header">
+                            <h3>${escapeHtml(course.title)}</h3>
+                            ${course.title_en ? `<span class="course-title-en">${escapeHtml(course.title_en)}</span>` : ''}
+                        </div>
+                        <div class="course-meta">
+                            <span class="badge">Grade ${escapeHtml(course.grade)}</span>
+                            <span class="badge">${escapeHtml(course.language.toUpperCase())}</span>
+                            ${course.credit_hours ? `<span class="badge">${course.credit_hours}h</span>` : ''}
+                        </div>
+                        <p class="course-description">${escapeHtml(course.description)}</p>
+                        <button class="btn" onclick="enroll('${course.id}', this)" ${!isLoggedIn ? 'disabled' : ''}>
+                            ${isLoggedIn ? 'Enroll' : 'Log in to Enroll'}
+                        </button>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            html += '<div id="enroll-message"></div>';
+            document.getElementById('content').innerHTML = html;
+        }
+
+        async function enroll(courseId, btn) {
+            btn.disabled = true;
+            btn.textContent = 'Enrolling...';
+            try {
+                const response = await fetch(`${API_BASE}/api/courses/${courseId}/enroll`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    btn.textContent = '✅ Enrolled';
+                    btn.style.background = '#2a5a3e';
+                    document.getElementById('enroll-message').innerHTML =
+                        `<div class="success-message">Successfully enrolled!</div>`;
+                } else {
+                    throw new Error(result.error || 'Enrollment failed');
+                }
+            } catch (err) {
+                btn.disabled = false;
+                btn.textContent = 'Enroll';
+                alert('Enrollment failed: ' + err.message);
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        fetchCourses();
+    </script>
+</body>
+</html>
