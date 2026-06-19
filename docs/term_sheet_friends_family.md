@@ -1,8 +1,8 @@
 # TERM SHEET — Friends & Family Round
 **AndOr Designs Inc.** (the "Company")
 
-**Date:** June 20, 2026
-**Investor:** [Dad's Full Name] (the "Investor")
+**Date:** [Date]
+**Investor:** [Investor Name] (the "Investor")
 **Founder:** Jer / AndOr Designs Inc. (the "Founder")
 
 ---
@@ -72,7 +72,7 @@ This Term Sheet is intended solely as a basis for further discussion and is **no
 Jer / AndOr Designs Inc.
 
 **Investor:** _________________________  Date: _______________
-[Dad's Full Name]
+[Investor Name]
 
 ---
 
