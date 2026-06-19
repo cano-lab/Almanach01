@@ -41,4 +41,21 @@ The first curriculum implemented is Ontario Grade 9 Mathematics (MTH1W) — 4 un
 
 ## License
 
-MIT
+Almanach is licensed under the **GNU Affero General Public License v3 (AGPL)**.
+
+This means:
+- You are free to use, study, modify, and distribute the software
+- If you run a modified version as a web service, you must make the source code available to users
+- Derivative works must also be licensed under the AGPL
+
+### Commercial Licensing
+
+For enterprise use cases that are incompatible with the AGPL — such as embedding Almanach in proprietary LMS platforms or offering it as a commercial SaaS without open-sourcing your entire stack — a commercial license is available.
+
+Contact: **Jer / AndOr Designs Inc.** — jer@andordesigns.ca
+
+The commercial license grants you the right to use Almanach in proprietary products and services without the copyleft obligations of the AGPL.
+
+---
+
+*Almanach™ is a trademark of AndOr Designs Inc.*
