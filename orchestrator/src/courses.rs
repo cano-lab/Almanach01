@@ -2,9 +2,8 @@
 //!
 //! Provides lesson roadmaps that students follow, with teacher oversight.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
-use std::sync::Mutex;
 
 // ─── Roadmap Types ─────────────────────────────────────────────────────────
 
@@ -14,6 +13,7 @@ pub struct Roadmap {
     pub name: String,
     pub description: Option<String>,
     pub is_active: bool,
+    pub course_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub topics: Vec<RoadmapTopic>,
@@ -34,10 +34,16 @@ pub struct RoadmapLesson {
     pub id: String,
     pub topic_id: String,
     pub title: String,
+    pub title_en: Option<String>,
     pub description: Option<String>,
     pub order_index: i64,
     pub completion_criteria: Option<String>,
     pub system_prompt: Option<String>,
+    pub topics: Vec<String>,
+    pub objectives: Vec<String>,
+    pub keywords: Vec<String>,
+    pub estimated_minutes: i64,
+    pub source_lesson_id: Option<String>,
     pub created_at: String,
 }
 
@@ -96,9 +102,11 @@ CREATE TABLE IF NOT EXISTS roadmaps (
     name        TEXT NOT NULL,
     description TEXT,
     is_active   INTEGER NOT NULL DEFAULT 0,
+    course_id   TEXT REFERENCES courses(id),
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_roadmaps_course ON roadmaps(course_id);
 
 CREATE TABLE IF NOT EXISTS roadmap_topics (
     id           TEXT PRIMARY KEY,
@@ -114,14 +122,21 @@ CREATE TABLE IF NOT EXISTS roadmap_lessons (
     id                   TEXT PRIMARY KEY,
     topic_id             TEXT NOT NULL,
     title                TEXT NOT NULL,
+    title_en             TEXT,
     description          TEXT,
     order_index          INTEGER NOT NULL DEFAULT 0,
     completion_criteria  TEXT,
     system_prompt        TEXT,
+    topics               TEXT DEFAULT '[]',
+    objectives           TEXT DEFAULT '[]',
+    keywords             TEXT DEFAULT '[]',
+    estimated_minutes    INTEGER DEFAULT 60,
+    source_lesson_id     TEXT REFERENCES lessons(id),
     created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(topic_id) REFERENCES roadmap_topics(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_lessons_topic ON roadmap_lessons(topic_id, order_index);
+CREATE INDEX IF NOT EXISTS idx_roadmap_lessons_source ON roadmap_lessons(source_lesson_id);
 
 CREATE TABLE IF NOT EXISTS student_progress (
     user_id        TEXT NOT NULL,
@@ -234,8 +249,8 @@ impl crate::chat_db::ChatDb {
         let conn = self.conn.lock().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         conn.execute(
-            "INSERT INTO roadmaps (id, name, description, is_active, created_at, updated_at)
-             VALUES (?1, ?2, ?3, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            "INSERT INTO roadmaps (id, name, description, is_active, course_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
             params![id, name, description],
         )?;
         Ok(Roadmap {
@@ -243,6 +258,7 @@ impl crate::chat_db::ChatDb {
             name: name.to_string(),
             description: description.map(|s| s.to_string()),
             is_active: false,
+            course_id: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             topics: vec![],
@@ -252,7 +268,7 @@ impl crate::chat_db::ChatDb {
     pub fn list_roadmaps(&self) -> Result<Vec<Roadmap>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, is_active, created_at, updated_at
+            "SELECT id, name, description, is_active, course_id, created_at, updated_at
              FROM roadmaps ORDER BY updated_at DESC",
         )?;
         let mut roadmaps = stmt
@@ -262,8 +278,9 @@ impl crate::chat_db::ChatDb {
                     name: row.get(1)?,
                     description: row.get(2)?,
                     is_active: row.get::<_, i64>(3)? != 0,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
+                    course_id: row.get(4).ok(),
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
                     topics: vec![],
                 })
             })?
@@ -278,7 +295,7 @@ impl crate::chat_db::ChatDb {
     pub fn get_roadmap(&self, id: &str) -> Result<Option<Roadmap>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, is_active, created_at, updated_at
+            "SELECT id, name, description, is_active, course_id, created_at, updated_at
              FROM roadmaps WHERE id = ?1",
         )?;
         let mut roadmap = stmt
@@ -288,8 +305,9 @@ impl crate::chat_db::ChatDb {
                     name: row.get(1)?,
                     description: row.get(2)?,
                     is_active: row.get::<_, i64>(3)? != 0,
-                    created_at: row.get(4)?,
-                    updated_at: row.get(5)?,
+                    course_id: row.get(4).ok(),
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
                     topics: vec![],
                 })
             })?
@@ -328,20 +346,30 @@ impl crate::chat_db::ChatDb {
 
     fn load_lessons(conn: &Connection, topic_id: &str) -> Result<Vec<RoadmapLesson>> {
         let mut stmt = conn.prepare(
-            "SELECT id, topic_id, title, description, order_index, completion_criteria, system_prompt, created_at
+            "SELECT id, topic_id, title, title_en, description, order_index, completion_criteria, system_prompt,
+                    topics, objectives, keywords, estimated_minutes, source_lesson_id, created_at
              FROM roadmap_lessons WHERE topic_id = ?1 ORDER BY order_index",
         )?;
         let lessons = stmt
             .query_map(params![topic_id], |row| {
+                let topics_json: String = row.get(8)?;
+                let objectives_json: String = row.get(9)?;
+                let keywords_json: String = row.get(10)?;
                 Ok(RoadmapLesson {
                     id: row.get(0)?,
                     topic_id: row.get(1)?,
                     title: row.get(2)?,
-                    description: row.get(3)?,
-                    order_index: row.get(4)?,
-                    completion_criteria: row.get(5)?,
-                    system_prompt: row.get(6)?,
-                    created_at: row.get(7)?,
+                    title_en: row.get(3).ok(),
+                    description: row.get(4)?,
+                    order_index: row.get(5)?,
+                    completion_criteria: row.get(6)?,
+                    system_prompt: row.get(7)?,
+                    topics: serde_json::from_str(&topics_json).unwrap_or_default(),
+                    objectives: serde_json::from_str(&objectives_json).unwrap_or_default(),
+                    keywords: serde_json::from_str(&keywords_json).unwrap_or_default(),
+                    estimated_minutes: row.get(11)?,
+                    source_lesson_id: row.get(12).ok(),
+                    created_at: row.get(13)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -407,12 +435,124 @@ impl crate::chat_db::ChatDb {
             id,
             topic_id: topic_id.to_string(),
             title: title.to_string(),
+            title_en: None,
             description: description.map(|s| s.to_string()),
             order_index,
             completion_criteria: completion_criteria.map(|s| s.to_string()),
             system_prompt: system_prompt.map(|s| s.to_string()),
+            topics: Vec::new(),
+            objectives: Vec::new(),
+            keywords: Vec::new(),
+            estimated_minutes: 60,
+            source_lesson_id: None,
             created_at: chrono::Utc::now().to_rfc3339(),
         })
+    }
+
+    // ─── Create Roadmap from Course ─────────────────────────────────────────
+
+    pub fn create_roadmap_from_course(
+        &self,
+        course_id: &str,
+        name: &str,
+        description: Option<&str>,
+    ) -> Result<Roadmap> {
+        let roadmap_id = {
+            let conn = self.conn.lock().unwrap();
+
+            // Start transaction so roadmap creation is atomic
+            conn.execute("BEGIN", [])?;
+
+            // Verify course exists
+            let course_exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM courses WHERE id = ?1",
+                params![course_id],
+                |row| row.get(0),
+            )?;
+            if course_exists == 0 {
+                anyhow::bail!("Course not found: {}", course_id);
+            }
+
+            let roadmap_id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO roadmaps (id, name, description, is_active, course_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, 0, ?4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                params![roadmap_id, name, description, course_id],
+            )?;
+
+            // Load modules
+            let mut mod_stmt = conn.prepare(
+                "SELECT id, title, description, order_index FROM modules WHERE course_id = ?1 ORDER BY order_index"
+            )?;
+            let modules = mod_stmt
+                .query_map(params![course_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?, row.get::<_, i64>(3)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+
+            for (mod_id, mod_title, mod_desc, mod_order) in modules {
+                let topic_id = uuid::Uuid::new_v4().to_string();
+                conn.execute(
+                    "INSERT INTO roadmap_topics (id, roadmap_id, title, description, order_index)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![topic_id, &roadmap_id, &mod_title, mod_desc.as_deref(), mod_order],
+                )?;
+
+                // Load lessons for this module
+                let mut les_stmt = conn.prepare(
+                    "SELECT id, title, title_en, description, topics, objectives, estimated_minutes, system_prompt, keywords, order_index
+                     FROM lessons WHERE module_id = ?1 ORDER BY order_index"
+                )?;
+                let lessons = les_stmt
+                    .query_map(params![&mod_id], |row| {
+                        let topics_json: String = row.get(4)?;
+                        let objectives_json: String = row.get(5)?;
+                        let keywords_json: String = row.get(8)?;
+                        Ok((
+                            row.get::<_, String>(0)?,   // lesson id
+                            row.get::<_, String>(1)?,   // title
+                            row.get::<_, Option<String>>(2)?, // title_en
+                            row.get::<_, Option<String>>(3)?, // description
+                            serde_json::from_str::<Vec<String>>(&topics_json).unwrap_or_default(),
+                            serde_json::from_str::<Vec<String>>(&objectives_json).unwrap_or_default(),
+                            row.get::<_, i64>(6)?,      // estimated_minutes
+                            row.get::<_, Option<String>>(7)?, // system_prompt
+                            serde_json::from_str::<Vec<String>>(&keywords_json).unwrap_or_default(),
+                            row.get::<_, i64>(9)?,      // order_index
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+
+                for (lesson_id, title, title_en, desc, topics, objectives, est_minutes, sys_prompt, keywords, order) in lessons {
+                    let rl_id = uuid::Uuid::new_v4().to_string();
+                    let completion_criteria = if objectives.is_empty() {
+                        None
+                    } else {
+                        let joined = objectives.iter().take(2).cloned().collect::<Vec<_>>().join(" ");
+                        Some(joined)
+                    };
+                    let topics_json = serde_json::to_string(&topics).unwrap_or_else(|_| "[]".to_string());
+                    let objectives_json = serde_json::to_string(&objectives).unwrap_or_else(|_| "[]".to_string());
+                    let keywords_json = serde_json::to_string(&keywords).unwrap_or_else(|_| "[]".to_string());
+                    conn.execute(
+                        "INSERT INTO roadmap_lessons (id, topic_id, title, title_en, description, order_index, completion_criteria, system_prompt, topics, objectives, keywords, estimated_minutes, source_lesson_id, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, CURRENT_TIMESTAMP)",
+                        params![
+                            rl_id, &topic_id, &title, title_en.as_deref(), desc.as_deref(), order,
+                            completion_criteria.as_deref(), sys_prompt.as_deref(),
+                            topics_json, objectives_json, keywords_json, est_minutes, &lesson_id
+                        ],
+                    )?;
+                }
+            }
+
+            conn.execute("COMMIT", [])?;
+
+            roadmap_id
+        };
+
+        self.get_roadmap(&roadmap_id)
+            .and_then(|opt| opt.ok_or_else(|| anyhow::anyhow!("Failed to load created roadmap")))
     }
 
     // ─── Student Progress ─────────────────────────────────────────────────
@@ -499,7 +639,7 @@ impl crate::chat_db::ChatDb {
     pub fn record_user_activity(&self, user_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let now = chrono::Utc::now().to_rfc3339();
-        
+
         conn.execute(
             "INSERT INTO user_metrics (user_id, total_messages, messages_today, last_active)
              VALUES (?1, 1, 1, ?2)

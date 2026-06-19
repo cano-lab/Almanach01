@@ -64,6 +64,8 @@ pub struct Config {
     /// Headscale namespace (defaults to "almanach" if not specified)
     #[serde(default)]
     pub headscale_namespace: Option<String>,
+    #[serde(default = "default_cors_allowed_origins")]
+    pub cors_allowed_origins: Vec<String>,
     #[serde(default)]
     pub model_servers: ModelServers,
     #[serde(default)]
@@ -159,6 +161,13 @@ fn default_runtime_socket() -> String {
     "/var/run/almanach.sock".to_string()
 }
 
+fn default_cors_allowed_origins() -> Vec<String> {
+    vec![
+        "http://localhost:3000".to_string(),
+        "http://127.0.0.1:3000".to_string(),
+    ]
+}
+
 #[derive(Debug, Deserialize, Clone, Default)]
 #[serde(rename_all = "kebab-case")]
 pub struct ModelServers {
@@ -231,7 +240,8 @@ pub fn load() -> anyhow::Result<Config> {
         .set_default("headscale-auth-key", None::<String>)?
         .set_default("headscale-namespace", None::<String>)?
         .set_default("student-secret", None::<String>)?
-        .set_default("admin-secret", None::<String>)?;
+        .set_default("admin-secret", None::<String>)?
+        .set_default("cors-allowed-origins", default_cors_allowed_origins())?;
 
     // Load from config file if found
     if let Some(config_path) = find_config_file() {

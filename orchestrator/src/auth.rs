@@ -22,7 +22,7 @@ use argon2::{
     Argon2,
 };
 use axum::{
-    extract::{Request, State},
+    extract::{Extension, Request, State},
     http::{header, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -119,6 +119,7 @@ impl IntoResponse for AuthError {
                 StatusCode::UNAUTHORIZED,
                 "Invalid authorization header format",
             ),
+            AuthError::JwtError(_) => (StatusCode::UNAUTHORIZED, "Invalid or expired token"),
             AuthError::RegistrationDisabled => (StatusCode::FORBIDDEN, "Registration is disabled"),
             AuthError::UserAlreadyExists => (StatusCode::CONFLICT, "User already exists"),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"),
@@ -636,24 +637,16 @@ pub async fn user_register(
 /// sets status to approved immediately).
 pub async fn admin_create_user(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<AdminCreateUserRequest>,
 ) -> Result<Json<UserRegisterResponse>, AuthError> {
     use crate::chat_db::{NewUser, UserRole, ApprovalStatus};
 
     // Verify admin
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let role = UserRole::parse(&req.role);
 
@@ -698,24 +691,16 @@ pub async fn admin_create_user(
 /// Admin-only endpoint to approve or reject a pending user.
 pub async fn admin_approve_user(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<ApproveUserRequest>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
     use crate::chat_db::ApprovalStatus;
 
     // Verify admin
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let status = match req.action.as_str() {
         "approve" => ApprovalStatus::Approved,
@@ -738,21 +723,13 @@ pub async fn admin_approve_user(
 /// Admin-only endpoint to list all pending users.
 pub async fn admin_pending_users(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
     // Verify admin
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let users = state.chat_db.list_pending_users()
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -777,21 +754,13 @@ pub async fn admin_pending_users(
 /// Admin-only endpoint to list all users.
 pub async fn admin_list_users(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
     // Verify admin
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let users = state.chat_db.list_all_users()
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -842,16 +811,8 @@ pub async fn user_login(
 /// GET /api/me — return the calling user's profile (decoded from claims).
 pub async fn me(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<MeResponse>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
-    drop(auth);
 
     // Legacy admin token: no role claim → return synthetic admin.
     let role = claims.role.clone().unwrap_or_else(|| "admin".to_string());
@@ -888,20 +849,12 @@ pub struct CreateSystemPromptRequest {
 /// GET /api/admin/system-prompts
 pub async fn admin_list_system_prompts(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let prompts = state.chat_db.list_system_prompts()
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -915,21 +868,13 @@ pub async fn admin_list_system_prompts(
 /// POST /api/admin/system-prompts
 pub async fn admin_create_system_prompt(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     Json(req): Json<CreateSystemPromptRequest>,
 ) -> Result<Json<crate::chat_db::SystemPrompt>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let prompt = state.chat_db.create_system_prompt(&req.name, &req.content)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -939,21 +884,13 @@ pub async fn admin_create_system_prompt(
 /// POST /api/admin/system-prompts/:id/activate
 pub async fn admin_activate_system_prompt(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     state.chat_db.set_active_system_prompt(&id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -966,21 +903,13 @@ pub async fn admin_activate_system_prompt(
 /// DELETE /api/admin/system-prompts/:id
 pub async fn admin_delete_system_prompt(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> Result<StatusCode, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     state.chat_db.delete_system_prompt(&id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -990,21 +919,13 @@ pub async fn admin_delete_system_prompt(
 /// GET /api/admin/users/:id/conversations
 pub async fn admin_list_user_conversations(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     axum::extract::Path(user_id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let conversations = state.chat_db.admin_list_user_conversations(&user_id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -1014,21 +935,13 @@ pub async fn admin_list_user_conversations(
 /// GET /api/admin/conversations/:id/messages
 pub async fn admin_get_conversation_messages(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     axum::extract::Path(conv_id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let messages = state.chat_db.admin_get_conversation_messages(&conv_id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -1043,22 +956,14 @@ pub struct SetUserSystemPromptRequest {
 
 pub async fn admin_set_user_system_prompt(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     axum::extract::Path(user_id): axum::extract::Path<String>,
     Json(req): Json<SetUserSystemPromptRequest>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     state.chat_db.set_user_system_prompt(&user_id, req.system_prompt.as_deref())
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -1072,21 +977,13 @@ pub async fn admin_set_user_system_prompt(
 /// GET /api/admin/users/:id/system-prompt
 pub async fn admin_get_user_system_prompt(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<Claims>,
     axum::extract::Path(user_id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(token)?;
     let caller_role = claims.role.as_deref().unwrap_or("admin");
     if caller_role != "admin" && caller_role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let prompt = state.chat_db.get_user_system_prompt(&user_id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -1099,23 +996,36 @@ pub async fn admin_get_user_system_prompt(
 // === Middleware ===
 
 /// JWT authentication middleware for HTTP requests
-#[allow(dead_code)]
 pub async fn auth_middleware(
     State(state): State<Arc<AppState>>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, AuthError> {
+    let path = request.uri().path();
+
     // Skip auth for health check
-    if request.uri().path() == "/health" {
+    if path == "/health" {
         return Ok(next.run(request).await);
     }
 
     // Skip auth for auth endpoints themselves
-    let path = request.uri().path();
     if path.starts_with("/auth/login")
+        || path.starts_with("/auth/user/login")
         || path.starts_with("/auth/register")
+        || path.starts_with("/auth/user/register")
         || path.starts_with("/auth/status")
+        || path.starts_with("/auth/refresh")
     {
+        return Ok(next.run(request).await);
+    }
+
+    // Skip auth for WebSocket endpoint (it validates the token from query params internally)
+    if path.starts_with("/ws/chat") {
+        return Ok(next.run(request).await);
+    }
+
+    // Skip auth for static site fallback (anything that is not an API or auth route)
+    if !path.starts_with("/api/") && !path.starts_with("/auth/") {
         return Ok(next.run(request).await);
     }
 

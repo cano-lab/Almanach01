@@ -127,6 +127,24 @@ impl ChatDb {
             )?;
             tracing::info!("Migrated schema v10: added conversations.provider, conversations.model");
         }
+
+        // Migration: add temperature to conversations if not exists (schema v11)
+        let has_temperature: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'temperature'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_temperature == 0 {
+            conn.execute(
+                "ALTER TABLE conversations ADD COLUMN temperature REAL",
+                [],
+            )?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version) VALUES (11)",
+                [],
+            )?;
+            tracing::info!("Migrated schema v11: added conversations.temperature");
+        }
         let has_courses: i64 = conn.query_row(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='courses'",
             [],
@@ -238,6 +256,65 @@ impl ChatDb {
                 [],
             )?;
             tracing::info!("Migrated schema v6: added roadmaps, topics, lessons, progress, metrics tables");
+        }
+
+        // Migration: enrich roadmaps with course_id and roadmap_lessons metadata (schema v12)
+        let has_roadmap_course_id: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('roadmaps') WHERE name = 'course_id'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_roadmap_course_id == 0 {
+            conn.execute(
+                "ALTER TABLE roadmaps ADD COLUMN course_id TEXT REFERENCES courses(id)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_roadmaps_course ON roadmaps(course_id)",
+                [],
+            )?;
+            tracing::info!("Migrated schema v12: added roadmaps.course_id");
+        }
+
+        let has_rl_title_en: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('roadmap_lessons') WHERE name = 'title_en'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_rl_title_en == 0 {
+            conn.execute(
+                "ALTER TABLE roadmap_lessons ADD COLUMN title_en TEXT",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE roadmap_lessons ADD COLUMN topics TEXT DEFAULT '[]'",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE roadmap_lessons ADD COLUMN objectives TEXT DEFAULT '[]'",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE roadmap_lessons ADD COLUMN keywords TEXT DEFAULT '[]'",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE roadmap_lessons ADD COLUMN estimated_minutes INTEGER DEFAULT 60",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE roadmap_lessons ADD COLUMN source_lesson_id TEXT REFERENCES lessons(id)",
+                [],
+            )?;
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_roadmap_lessons_source ON roadmap_lessons(source_lesson_id)",
+                [],
+            )?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version) VALUES (12)",
+                [],
+            )?;
+            tracing::info!("Migrated schema v12: added roadmap_lessons metadata columns");
         }
 
         Ok(())
@@ -875,6 +952,7 @@ pub struct ChatConversation {
     pub color: String,
     pub provider: Option<String>,
     pub model: Option<String>,
+    pub temperature: Option<f32>,
     pub created_at: String,
     pub updated_at: String,
     pub message_count: i64,
@@ -966,7 +1044,7 @@ impl ChatDb {
     pub fn list_conversations(&self, user_id: &str) -> Result<Vec<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1
@@ -981,24 +1059,31 @@ impl ChatDb {
                     color: row.get(3)?,
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7).unwrap_or_default(),
-                    message_count: row.get(8)?,
+                    temperature: row.get(6).ok(),
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8).unwrap_or_default(),
+                    message_count: row.get(9)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    pub fn create_conversation(&self, user_id: &str, title: &str, provider: Option<&str>, model: Option<&str>) -> Result<ChatConversation> {
+    pub fn create_conversation(&self,
+        user_id: &str,
+        title: &str,
+        provider: Option<&str>,
+        model: Option<&str>,
+        temperature: Option<f32>,
+    ) -> Result<ChatConversation> {
         let colors = ["#2a7f7f", "#b85c38", "#d4a843", "#5a7a5a", "#8a6a8a"];
         let color = colors[uuid::Uuid::new_v4().as_u128() as usize % colors.len()];
         let conn = self.conn.lock().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         conn.execute(
-            "INSERT INTO conversations (id, user_id, agent_id, title, color, provider, model, created_at, last_message_at)
-             VALUES (?1, ?2, 'chat', ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-            params![id, user_id, title, color, provider, model],
+            "INSERT INTO conversations (id, user_id, agent_id, title, color, provider, model, temperature, created_at, last_message_at)
+             VALUES (?1, ?2, 'chat', ?3, ?4, ?5, ?6, ?7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            params![id, user_id, title, color, provider, model, temperature],
         )?;
         Ok(ChatConversation {
             id,
@@ -1007,6 +1092,7 @@ impl ChatDb {
             color: color.to_string(),
             provider: provider.map(|s| s.to_string()),
             model: model.map(|s| s.to_string()),
+            temperature,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             message_count: 0,
@@ -1016,7 +1102,7 @@ impl ChatDb {
     pub fn get_conversation(&self, id: &str, user_id: &str) -> Result<ChatConversation> {
         let conn = self.conn.lock().unwrap();
         let row = conn.query_row(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE id = ?1 AND user_id = ?2",
@@ -1029,9 +1115,10 @@ impl ChatDb {
                     color: row.get(3)?,
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7).unwrap_or_default(),
-                    message_count: row.get(8)?,
+                    temperature: row.get(6).ok(),
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8).unwrap_or_default(),
+                    message_count: row.get(9)?,
                 })
             },
         )?;
@@ -1267,7 +1354,7 @@ pub fn add_message(
     pub fn admin_list_user_conversations(&self, target_user_id: &str) -> Result<Vec<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1
@@ -1282,9 +1369,10 @@ pub fn add_message(
                     color: row.get(3)?,
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7).unwrap_or_default(),
-                    message_count: row.get(8)?,
+                    temperature: row.get(6).ok(),
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8).unwrap_or_default(),
+                    message_count: row.get(9)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1356,6 +1444,36 @@ pub fn add_message(
         conn.execute(
             "UPDATE conversations SET provider = ?1, model = ?2 WHERE id = ?3 AND user_id = ?4",
             params![provider, model, conversation_id, user_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_conversation_temperature(&self,
+        conversation_id: &str,
+        user_id: &str,
+    ) -> Result<Option<f32>> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn
+            .query_row(
+                "SELECT temperature FROM conversations WHERE id = ?1 AND user_id = ?2",
+                params![conversation_id, user_id],
+                |row| row.get::<_, Option<f32>>(0),
+            )
+            .optional()
+            .context("get_conversation_temperature")?;
+        Ok(result.flatten())
+    }
+
+    pub fn set_conversation_temperature(
+        &self,
+        conversation_id: &str,
+        user_id: &str,
+        temperature: f32,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversations SET temperature = ?1 WHERE id = ?2 AND user_id = ?3",
+            params![temperature, conversation_id, user_id],
         )?;
         Ok(())
     }
@@ -1603,6 +1721,7 @@ pub fn add_message(
             color: color.to_string(),
             provider: None,
             model: None,
+            temperature: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             message_count: 0,
@@ -1612,7 +1731,7 @@ pub fn add_message(
     pub fn get_conversation_by_lesson(&self, user_id: &str, lesson_id: &str) -> Result<Option<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1 AND lesson_id = ?2
@@ -1626,9 +1745,10 @@ pub fn add_message(
                     color: row.get(3)?,
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
-                    created_at: row.get(6)?,
-                    updated_at: row.get(7).unwrap_or_default(),
-                    message_count: row.get(8)?,
+                    temperature: row.get(6).ok(),
+                    created_at: row.get(7)?,
+                    updated_at: row.get(8).unwrap_or_default(),
+                    message_count: row.get(9)?,
                 })
             },
         ).optional().context("get_conversation_by_lesson")

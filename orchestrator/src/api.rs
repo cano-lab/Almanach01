@@ -1,7 +1,7 @@
 //! API handlers for Almanach Chat Server
 
 use axum::{
-    extract::{Path, Query, State, WebSocketUpgrade},
+    extract::{Extension, Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Response, Sse},
     Json,
@@ -9,6 +9,7 @@ use axum::{
 use axum::response::sse::Event;
 use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
+use secrecy::ExposeSecret;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -111,29 +112,13 @@ pub async fn refresh_token(
 }
 
 pub async fn me(
-    State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    State(_state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     Ok(Json(serde_json::json!({
         "username": claims.sub,
         "role": claims.role.unwrap_or_else(|| "user".to_string()),
     })))
-}
-
-fn extract_token(headers: &axum::http::HeaderMap) -> Result<String, (StatusCode, String)> {
-    headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(|t| t.to_string())
-        .ok_or((StatusCode::UNAUTHORIZED, "Missing authorization header".to_string()))
 }
 
 // === API Keys ===
@@ -151,7 +136,6 @@ pub struct ApiKeyInfo {
 }
 
 pub async fn list_api_keys(State(state): State<Arc<AppState>>) -> Json<Vec<ApiKeyInfo>> {
-    let keys = state.api_keys.read().await;
     let providers = ["zai", "anthropic", "openai", "kimi", "google", "augure"];
 
     Json(
@@ -159,40 +143,36 @@ pub async fn list_api_keys(State(state): State<Arc<AppState>>) -> Json<Vec<ApiKe
             .iter()
             .map(|p| ApiKeyInfo {
                 provider: p.to_string(),
-                has_key: keys.contains_key(*p),
+                has_key: state.api_keys.contains_key(*p),
             })
             .collect(),
     )
 }
 
 pub async fn set_api_key(
-    State(state): State<Arc<AppState>>,
+    _state: State<Arc<AppState>>,
     Json(req): Json<SetApiKeyRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let mut keys = state.api_keys.write().await;
-    keys.insert(req.provider.clone(), req.key);
-
-    let keys_path = state.data_dir.join("api_keys.json");
-    if let Ok(json) = serde_json::to_string_pretty(&*keys) {
-        let _ = std::fs::write(&keys_path, json);
-    }
-
-    Ok(StatusCode::CREATED)
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        format!(
+            "API keys are now managed via environment variables. Set {}_API_KEY and restart the server.",
+            req.provider.to_uppercase()
+        ),
+    ))
 }
 
 pub async fn delete_api_key(
-    State(state): State<Arc<AppState>>,
+    _state: State<Arc<AppState>>,
     Path(provider): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let mut keys = state.api_keys.write().await;
-    keys.remove(&provider);
-
-    let keys_path = state.data_dir.join("api_keys.json");
-    if let Ok(json) = serde_json::to_string_pretty(&*keys) {
-        let _ = std::fs::write(&keys_path, json);
-    }
-
-    Ok(StatusCode::NO_CONTENT)
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        format!(
+            "API keys are now managed via environment variables. Unset {}_API_KEY and restart the server.",
+            provider.to_uppercase()
+        ),
+    ))
 }
 
 /// Return the LLM API endpoint URL for a given provider.
@@ -289,17 +269,16 @@ pub async fn list_provider_models(
     Path(provider): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     // Read API key
-    let keys = state.api_keys.read().await;
-    let api_key = keys
+    let api_key = state
+        .api_keys
         .get(&provider)
-        .cloned()
+        .map(|s| s.expose_secret().to_string())
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({ "error": format!("No API key for provider: {}", provider) })),
             )
         })?;
-    drop(keys);
 
     // Anthropic has no public models endpoint
     if provider == "anthropic" {
@@ -404,19 +383,14 @@ pub struct CreateConversationRequest {
     pub provider: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 pub async fn list_conversations(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<Conversation>>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     // Ensure user exists in chat_db (legacy admin tokens don't have a user record)
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
@@ -435,16 +409,9 @@ pub async fn list_conversations(
 
 pub async fn create_conversation(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Json(req): Json<CreateConversationRequest>,
 ) -> Result<Json<Conversation>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     // Ensure the user exists in chat_db (legacy admin tokens don't have a user record)
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
@@ -455,7 +422,13 @@ pub async fn create_conversation(
 
     let conv = state
         .chat_db
-        .create_conversation(&claims.sub, req.title.as_deref().unwrap_or("New Chat"), req.provider.as_deref(), req.model.as_deref())
+        .create_conversation(
+            &claims.sub,
+            req.title.as_deref().unwrap_or("New Chat"),
+            req.provider.as_deref(),
+            req.model.as_deref(),
+            req.temperature,
+        )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(conv))
@@ -463,16 +436,9 @@ pub async fn create_conversation(
 
 pub async fn get_conversation(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<Conversation>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     // Ensure user exists in chat_db (legacy admin tokens don't have a user record)
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
@@ -491,16 +457,9 @@ pub async fn get_conversation(
 
 pub async fn delete_conversation(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     // Ensure user exists in chat_db (legacy admin tokens don't have a user record)
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
@@ -525,17 +484,10 @@ pub struct UpdateConversationRequest {
 
 pub async fn update_conversation(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
     Json(req): Json<UpdateConversationRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
     state
@@ -584,16 +536,9 @@ fn truncate_to_budget(messages: Vec<ChatMessage>, max_tokens: usize) -> Vec<Chat
 
 pub async fn compact_conversation(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<ChatMessage>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
     state
@@ -601,14 +546,14 @@ pub async fn compact_conversation(
         .get_or_create_user_from_claims(&claims.sub, None, user_role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    do_compact_conversation(&state, &id, &claims.sub).await
+    do_compact_conversation(&state, &id, &claims.sub).await.map(Json)
 }
 
 async fn do_compact_conversation(
-    state: &Arc<AppState>,
+    state: &AppState,
     id: &str,
     user_id: &str,
-) -> Result<Json<ChatMessage>, (StatusCode, String)> {
+) -> Result<ChatMessage, (StatusCode, String)> {
     // Get all messages
     let history = state
         .chat_db
@@ -616,12 +561,12 @@ async fn do_compact_conversation(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     if history.is_empty() {
-        return Ok(Json(ChatMessage {
+        return Ok(ChatMessage {
             id: "compact-empty".to_string(),
             role: "assistant".to_string(),
             content: "Nothing to compact — this conversation is empty.".to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
-        }));
+        });
     }
 
     // Build summarization prompt
@@ -640,12 +585,11 @@ async fn do_compact_conversation(
 
     // Get API key
     let provider = "kimi";
-    let keys = state.api_keys.read().await;
-    let api_key = keys
+    let api_key = state
+        .api_keys
         .get(provider)
-        .cloned()
+        .map(|s| s.expose_secret().to_string())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
-    drop(keys);
 
     // Call LLM for summary
     let client = reqwest::Client::new();
@@ -711,24 +655,17 @@ async fn do_compact_conversation(
         .update_conversation_title(id, user_id, "Compacted")
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(summary_msg))
+    Ok(summary_msg)
 }
 
 // === Messages ===
 
 pub async fn get_messages(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
     Query(pagination): Query<MessagePagination>,
 ) -> Result<Json<Vec<ChatMessage>>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
     state
@@ -762,19 +699,94 @@ pub struct SendMessageRequest {
     pub provider: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+enum SlashCommand {
+    Compact,
+    Temperature(f32),
+    Status,
+    Help,
+}
+
+fn parse_slash_command(content: &str) -> Option<SlashCommand> {
+    let trimmed = content.trim();
+    if trimmed.eq_ignore_ascii_case("/compact") {
+        return Some(SlashCommand::Compact);
+    }
+    if trimmed.eq_ignore_ascii_case("/status") {
+        return Some(SlashCommand::Status);
+    }
+    if trimmed.eq_ignore_ascii_case("/help") {
+        return Some(SlashCommand::Help);
+    }
+    let lower = trimmed.to_lowercase();
+    if let Some(rest) = lower.strip_prefix("/temp ").or_else(|| lower.strip_prefix("/temperature ")) {
+        let value = rest.trim();
+        if let Ok(temp) = value.parse::<f32>() {
+            return Some(SlashCommand::Temperature(temp));
+        }
+    }
+    None
+}
+
+const TEMPERATURE_HELP: &str = "Temperature controls randomness: lower values (e.g., 0.2) make responses more focused and predictable, while higher values (e.g., 1.0) make them more creative and random.";
+
+async fn handle_slash_command(
+    state: &AppState,
+    conversation_id: &str,
+    user_id: &str,
+    cmd: SlashCommand,
+) -> Result<ChatMessage, (StatusCode, String)> {
+    let response = match cmd {
+        SlashCommand::Compact => {
+            return do_compact_conversation(state, conversation_id, user_id).await;
+        }
+        SlashCommand::Temperature(temp) => {
+            if temp < 0.0 || temp > 2.0 {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "Temperature must be between 0.0 and 2.0.".to_string(),
+                ));
+            }
+            state
+                .chat_db
+                .set_conversation_temperature(conversation_id, user_id, temp)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            format!("Temperature set to {:.2}.\n\n{}", temp, TEMPERATURE_HELP)
+        }
+        SlashCommand::Status => {
+            let temp = state
+                .chat_db
+                .get_conversation_temperature(conversation_id, user_id)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let temp_str = temp.map(|t| format!("{:.2}", t)).unwrap_or_else(|| "default".to_string());
+            format!(
+                "Current settings:\n• Temperature: {}\n\n{}\n\nProvider and model are set separately via the dropdown.",
+                temp_str, TEMPERATURE_HELP
+            )
+        }
+        SlashCommand::Help => {
+            "Available slash commands:\n\
+             • /temp <0.0-2.0> or /temperature <0.0-2.0> — set the conversation temperature\n\
+             • /status — show current AI settings\n\
+             • /compact — summarize and compact the conversation history\n\
+             • /help — show this help message"
+                .to_string()
+        }
+    };
+
+    let msg = state
+        .chat_db
+        .add_message(conversation_id, user_id, "system", &response)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(msg)
+}
+
 pub async fn send_message(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<Json<ChatMessage>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     // Ensure user exists in chat_db (legacy admin tokens don't have a user record)
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
@@ -783,16 +795,16 @@ pub async fn send_message(
         .get_or_create_user_from_claims(&claims.sub, None, user_role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Check for compact command
-    if req.content.trim().eq_ignore_ascii_case("/compact") {
-        return do_compact_conversation(&state, &id, &claims.sub).await;
-    }
-
-    // Store user message
+    // Store user message (slash commands become part of history for transparency)
     let _user_msg = state
         .chat_db
         .add_message(&id, &claims.sub, "user", &req.content)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Check for slash commands
+    if let Some(cmd) = parse_slash_command(&req.content) {
+        return handle_slash_command(&state, &id, &claims.sub, cmd).await.map(Json);
+    }
 
     // Get conversation history for context
     let history = state
@@ -831,27 +843,35 @@ pub async fn send_message(
         .unwrap_or_else(|| "kimi-k2.6".to_string());
 
     // Get API key
-    let keys = state.api_keys.read().await;
-    let api_key = keys
+    let api_key = state
+        .api_keys
         .get(&provider)
-        .cloned()
+        .map(|s| s.expose_secret().to_string())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
-    drop(keys);
 
     // Call Kimi API (or other provider)
     let client = reqwest::Client::new();
     let endpoint = get_provider_endpoint(&provider);
     let max_tokens = get_model_max_tokens(&provider, &model);
+    let temperature = state
+        .chat_db
+        .get_conversation_temperature(&id, &claims.sub)
+        .ok()
+        .flatten();
+    let mut request_body = serde_json::json!({
+        "model": model,
+        "messages": llm_messages,
+        "stream": false,
+        "max_tokens": max_tokens,
+    });
+    if let Some(temp) = temperature {
+        request_body["temperature"] = serde_json::json!(temp);
+    }
     let response = client
         .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": llm_messages,
-            "stream": false,
-            "max_tokens": max_tokens,
-        }))
+        .json(&request_body)
         .send()
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("LLM request failed: {}", e)))?;
@@ -902,24 +922,35 @@ pub async fn send_message(
 
 pub async fn stream_conversation(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
     Json(req): Json<SendMessageRequest>,
 ) -> Result<axum::response::Response, (StatusCode, String)> {
     // Auth
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
     state.chat_db.get_or_create_user_from_claims(&claims.sub, None, user_role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Save user message
+    // Save user message (slash commands become part of history for transparency)
     let _user_msg = state.chat_db.add_message(&id, &claims.sub, "user", &req.content)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Check for slash commands
+    if let Some(cmd) = parse_slash_command(&req.content) {
+        match handle_slash_command(&state, &id, &claims.sub, cmd).await {
+            Ok(msg) => {
+                let event_data = serde_json::json!({ "text": msg.content }).to_string();
+                let events = vec![
+                    Ok::<_, axum::Error>(Event::default().data(event_data)),
+                    Ok::<_, axum::Error>(Event::default().data("[DONE]")),
+                ];
+                return Ok(Sse::new(futures::stream::iter(events)).into_response());
+            }
+            Err(e) => return Err(e),
+        }
+    }
 
     // Build context
     let history = state.chat_db.get_messages(&id, &claims.sub)
@@ -953,10 +984,15 @@ pub async fn stream_conversation(
         }
     };
 
-    let keys = state.api_keys.read().await;
-    let api_key = keys.get(&provider).cloned()
+    let api_key = state.api_keys.get(&provider)
+        .map(|s| s.expose_secret().to_string())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
-    drop(keys);
+
+    let temperature = state
+        .chat_db
+        .get_conversation_temperature(&id, &claims.sub)
+        .ok()
+        .flatten();
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<Event, axum::Error>>();
 
@@ -977,15 +1013,19 @@ pub async fn stream_conversation(
         let assistant_msg_id = assistant_msg.id;
 
         let max_tokens = get_model_max_tokens(&provider, &model);
+        let mut request_body = serde_json::json!({
+            "model": model,
+            "messages": llm_messages,
+            "stream": true,
+            "max_tokens": max_tokens,
+        });
+        if let Some(temp) = temperature {
+            request_body["temperature"] = serde_json::json!(temp);
+        }
         let response = client.post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            .json(&serde_json::json!({
-                "model": model,
-                "messages": llm_messages,
-                "stream": true,
-                "max_tokens": max_tokens,
-            }))
+            .json(&request_body)
             .send()
             .await;
 
@@ -1142,21 +1182,21 @@ pub struct ChatStreamRequest {
 
 pub async fn chat_stream(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Json(req): Json<ChatStreamRequest>,
 ) -> Result<Json<ChatMessage>, (StatusCode, String)> {
     // For now, non-streaming. Store user message and return assistant response.
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     let _user_msg = state
         .chat_db
         .add_message(&req.conversation_id, &claims.sub, "user", &req.content)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Check for slash commands
+    if let Some(cmd) = parse_slash_command(&req.content) {
+        return handle_slash_command(&state, &req.conversation_id, &claims.sub, cmd)
+            .await
+            .map(Json);
+    }
 
     let history = state
         .chat_db
@@ -1176,26 +1216,35 @@ pub async fn chat_stream(
     let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
     let model = req.model.unwrap_or_else(|| "kimi-k2.6".to_string());
 
-    let keys = state.api_keys.read().await;
-    let api_key = keys
+    // Get API key
+    let api_key = state
+        .api_keys
         .get(&provider)
-        .cloned()
+        .map(|s| s.expose_secret().to_string())
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
-    drop(keys);
 
     let client = reqwest::Client::new();
     let endpoint = get_provider_endpoint(&provider);
     let max_tokens = get_model_max_tokens(&provider, &model);
+    let temperature = state
+        .chat_db
+        .get_conversation_temperature(&req.conversation_id, &claims.sub)
+        .ok()
+        .flatten();
+    let mut request_body = serde_json::json!({
+        "model": model,
+        "messages": llm_messages,
+        "stream": false,
+        "max_tokens": max_tokens,
+    });
+    if let Some(temp) = temperature {
+        request_body["temperature"] = serde_json::json!(temp);
+    }
     let response = client
         .post(&endpoint)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
-        .json(&serde_json::json!({
-            "model": model,
-            "messages": llm_messages,
-            "stream": false,
-            "max_tokens": max_tokens,
-        }))
+        .json(&request_body)
         .send()
         .await
         .map_err(|e| (StatusCode::BAD_GATEWAY, format!("LLM request failed: {}", e)))?;
@@ -1283,6 +1332,21 @@ async fn handle_chat_ws(
                         &req.content,
                     );
 
+                    // Check for slash commands
+                    if let Some(cmd) = parse_slash_command(&req.content) {
+                        let reply = handle_slash_command(
+                            &state,
+                            &req.conversation_id,
+                            &user_id,
+                            cmd,
+                        )
+                        .await
+                        .map(|msg| msg.content)
+                        .unwrap_or_else(|(_, e)| e);
+                        let _ = socket.send(Message::Text(reply)).await;
+                        continue;
+                    }
+
                     // Get history
                     let history = match state.chat_db.get_messages(&req.conversation_id, &user_id) {
                         Ok(h) => h,
@@ -1302,27 +1366,34 @@ async fn handle_chat_ws(
                     let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
                     let model = req.model.unwrap_or_else(|| "kimi-k2.6".to_string());
 
-                    let keys = state.api_keys.read().await;
-                    let api_key = match keys.get(&provider) {
-                        Some(k) => k.clone(),
+                    let api_key = match state.api_keys.get(&provider) {
+                        Some(k) => k.expose_secret().clone(),
                         None => continue,
                     };
-                    drop(keys);
 
                     // Non-streaming for WebSocket simplicity
                     let client = reqwest::Client::new();
                     let endpoint = get_provider_endpoint(&provider);
                     let max_tokens = get_model_max_tokens(&provider, &model);
+                    let temperature = state
+                        .chat_db
+                        .get_conversation_temperature(&req.conversation_id, &user_id)
+                        .ok()
+                        .flatten();
+                    let mut request_body = serde_json::json!({
+                        "model": model,
+                        "messages": llm_messages,
+                        "stream": false,
+                        "max_tokens": max_tokens,
+                    });
+                    if let Some(temp) = temperature {
+                        request_body["temperature"] = serde_json::json!(temp);
+                    }
                     if let Ok(response) = client
                         .post(&endpoint)
                         .header("Authorization", format!("Bearer {}", api_key))
                         .header("Content-Type", "application/json")
-                        .json(&serde_json::json!({
-                            "model": model,
-                            "messages": llm_messages,
-                            "stream": false,
-                            "max_tokens": max_tokens,
-                        }))
+                        .json(&request_body)
                         .send()
                         .await
                     {
@@ -1368,18 +1439,12 @@ async fn handle_chat_ws(
 
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
 
     if claims.role.as_deref() != Some("admin") && claims.role.as_deref() != Some("teacher") {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
-    drop(auth);
 
     let users = state.chat_db.list_all_users()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1405,19 +1470,13 @@ pub struct ApproveUserRequest {
 
 pub async fn approve_user(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Json(req): Json<ApproveUserRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
 
     if claims.role.as_deref() != Some("admin") && claims.role.as_deref() != Some("teacher") {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
-    drop(auth);
 
     // Find user by username
     let user = state.chat_db.get_user_by_username(&req.username)
@@ -1432,19 +1491,13 @@ pub async fn approve_user(
 
 pub async fn delete_user(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
 
     if claims.role.as_deref() != Some("admin") {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
-    drop(auth);
 
     state.chat_db.delete_user(&id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1454,23 +1507,20 @@ pub async fn delete_user(
 
 #[derive(Deserialize)]
 pub struct ConversationSettingsRequest {
-    pub provider: String,
-    pub model: String,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f32>,
 }
 
 pub async fn set_conversation_settings(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
     Json(req): Json<ConversationSettingsRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth
-        .validate_token(&token)
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
-
     let role = claims.role.as_deref().unwrap_or("admin");
     let user_role = crate::chat_db::UserRole::parse(role);
     state
@@ -1478,24 +1528,35 @@ pub async fn set_conversation_settings(
         .get_or_create_user_from_claims(&claims.sub, None, user_role)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    state
-        .chat_db
-        .set_conversation_provider_model(&id, &claims.sub, &req.provider, &req.model)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let (Some(provider), Some(model)) = (req.provider.as_ref(), req.model.as_ref()) {
+        state
+            .chat_db
+            .set_conversation_provider_model(&id, &claims.sub, provider, model)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    if let Some(temp) = req.temperature {
+        if temp < 0.0 || temp > 2.0 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Temperature must be between 0.0 and 2.0.".to_string(),
+            ));
+        }
+        state
+            .chat_db
+            .set_conversation_temperature(&id, &claims.sub, temp)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
 
     Ok(Json(serde_json::json!({"status": "updated"})))
 }
 
 pub async fn set_conversation_system_prompt(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(_claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let prompt = req.get("prompt").and_then(|v| v.as_str());
     state.chat_db.set_conversation_system_prompt(&id, prompt)
@@ -1593,13 +1654,9 @@ pub async fn get_course(
 
 pub async fn enroll_course(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let enrollment = state.chat_db.enroll_user(&claims.sub, &id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1613,12 +1670,8 @@ pub async fn enroll_course(
 
 pub async fn list_enrollments(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let enrollments = state.chat_db.list_enrollments(&claims.sub)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1637,13 +1690,9 @@ pub async fn list_enrollments(
 
 pub async fn start_lesson(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let lesson = match state.chat_db.get_lesson(&id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
@@ -1733,13 +1782,9 @@ pub async fn get_lesson_detail(
 
 pub async fn update_progress(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(_claims): Extension<crate::auth::Claims>,
     Json(req): Json<UpdateProgressRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let valid_status = matches!(req.status.as_str(), "not_started" | "in_progress" | "completed");
     if !valid_status {
@@ -1761,13 +1806,9 @@ pub async fn update_progress(
 
 pub async fn get_enrollment_progress(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(_claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let progress = state.chat_db.get_enrollment_progress(&id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -1787,13 +1828,9 @@ pub async fn get_enrollment_progress(
 
 pub async fn get_lesson_chat(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token).map_err(|e| (StatusCode::UNAUTHORIZED, e.to_string()))?;
-    drop(auth);
 
     let conv = state.chat_db.get_conversation_by_lesson(&claims.sub, &id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

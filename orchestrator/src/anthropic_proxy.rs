@@ -1,6 +1,7 @@
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::post,
     Json, Router,
@@ -15,6 +16,36 @@ use std::sync::Arc;
 pub struct ProxyConfig {
     pub target_base_url: String, // e.g. "https://api.augureai.ca/v1"
     pub api_key: String,
+    pub bind_localhost_only: bool,
+    pub proxy_api_key: Option<String>,
+}
+
+async fn proxy_auth_middleware(
+    State(config): State<Arc<ProxyConfig>>,
+    req: axum::http::Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    if config.bind_localhost_only {
+        return Ok(next.run(req).await);
+    }
+
+    let expected = config
+        .proxy_api_key
+        .as_ref()
+        .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let auth = req
+        .headers()
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    if auth != expected {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    Ok(next.run(req).await)
 }
 
 /// Anthropic Messages API request format
@@ -262,20 +293,26 @@ async fn messages_smart_handler(
 /// Create the proxy router
 pub fn create_proxy_router(config: ProxyConfig) -> Router {
     let state = Arc::new(config);
-    
+
     Router::new()
         .route("/v1/messages", post(messages_smart_handler))
+        .layer(middleware::from_fn_with_state(state.clone(), proxy_auth_middleware))
         .with_state(state)
 }
 
 /// Run the proxy server
 pub async fn run_proxy(config: ProxyConfig, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let app = create_proxy_router(config.clone());
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    
-    println!("Anthropic proxy running on http://0.0.0.0:{}", port);
+    let bind_addr = if config.bind_localhost_only {
+        format!("127.0.0.1:{}", port)
+    } else {
+        format!("0.0.0.0:{}", port)
+    };
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+
+    println!("Anthropic proxy running on http://{}", bind_addr);
     println!("Target: {}", config.target_base_url);
-    
+
     axum::serve(listener, app).await?;
     Ok(())
 }
@@ -305,6 +342,7 @@ mod tests {
         assert_eq!(openai["model"], "claude-3-haiku");
         assert!(openai["messages"].as_array().unwrap().len() == 2); // system + user
         assert_eq!(openai["max_tokens"], 1024);
-        assert_eq!(openai["temperature"], 0.7);
+        let temp = openai["temperature"].as_f64().unwrap();
+        assert!((temp - 0.7).abs() < 1e-6);
     }
 }

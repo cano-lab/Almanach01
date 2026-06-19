@@ -1,24 +1,30 @@
 //! Roadmap / Curriculum Tracking API Handlers for Almanach
 
 use axum::{
+    extract::Extension,
     extract::{Path, State},
     http::StatusCode,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::AppState;
 use crate::auth::AuthError;
 use crate::courses::{
     Roadmap, RoadmapTopic, RoadmapLesson, ProgressStatus,
-    StudentProgress, UserMetrics,
 };
 
 // ─── Roadmap CRUD ─────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub struct CreateRoadmapRequest {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateRoadmapFromCourseRequest {
     pub name: String,
     pub description: Option<String>,
 }
@@ -46,16 +52,12 @@ pub struct UpdateProgressRequest {
 
 pub async fn list_roadmaps(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let roadmaps = state.chat_db.list_roadmaps()
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -64,36 +66,44 @@ pub async fn list_roadmaps(
 
 pub async fn create_roadmap(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Json(req): Json<CreateRoadmapRequest>,
 ) -> Result<Json<Roadmap>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let roadmap = state.chat_db.create_roadmap(&req.name, req.description.as_deref())
         .map_err(|_| AuthError::InvalidCredentials)?;
     Ok(Json(roadmap))
 }
 
+pub async fn create_roadmap_from_course(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
+    Path(id): Path<String>,
+    Json(req): Json<CreateRoadmapFromCourseRequest>,
+) -> Result<Json<Roadmap>, AuthError> {
+    let role = claims.role.as_deref().unwrap_or("admin");
+    if role != "admin" && role != "teacher" {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    let roadmap = state.chat_db.create_roadmap_from_course(&id, &req.name, req.description.as_deref())
+        .map_err(|_| AuthError::InvalidCredentials)?;
+    Ok(Json(roadmap))
+}
+
 pub async fn get_roadmap(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" && role != "student" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let roadmap = state.chat_db.get_roadmap(&id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -105,17 +115,13 @@ pub async fn get_roadmap(
 
 pub async fn set_active_roadmap(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     state.chat_db.set_active_roadmap(&id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -124,17 +130,13 @@ pub async fn set_active_roadmap(
 
 pub async fn delete_roadmap(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     state.chat_db.delete_roadmap(&id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -145,18 +147,14 @@ pub async fn delete_roadmap(
 
 pub async fn create_topic(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(roadmap_id): Path<String>,
     Json(req): Json<CreateTopicRequest>,
 ) -> Result<Json<RoadmapTopic>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let topic = state.chat_db.create_topic(
         &roadmap_id, &req.title, req.description.as_deref(), req.order_index
@@ -168,18 +166,14 @@ pub async fn create_topic(
 
 pub async fn create_lesson(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(topic_id): Path<String>,
     Json(req): Json<CreateLessonRequest>,
 ) -> Result<Json<RoadmapLesson>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let lesson = state.chat_db.create_lesson(
         &topic_id, &req.title, req.description.as_deref(),
@@ -192,18 +186,14 @@ pub async fn create_lesson(
 
 pub async fn get_student_progress(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(user_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     let caller_id = claims.sub.clone();
     if role != "admin" && role != "teacher" && caller_id != user_id {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let progress = state.chat_db.get_student_progress(&user_id)
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -212,19 +202,15 @@ pub async fn get_student_progress(
 
 pub async fn update_lesson_progress(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path((user_id, lesson_id)): Path<(String, String)>,
     Json(req): Json<UpdateProgressRequest>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     let caller_id = claims.sub.clone();
     if role != "admin" && role != "teacher" && caller_id != user_id {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let status = match req.status.as_str() {
         "completed" => ProgressStatus::Completed,
@@ -244,16 +230,12 @@ pub async fn update_lesson_progress(
 
 pub async fn get_user_metrics(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" {
         return Err(AuthError::InvalidCredentials);
     }
-    drop(auth);
 
     let metrics = state.chat_db.get_user_metrics()
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -264,17 +246,13 @@ pub async fn get_user_metrics(
 
 pub async fn get_active_roadmap(
     State(state): State<Arc<AppState>>,
-    headers: axum::http::HeaderMap,
+    Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, AuthError> {
-    let token = extract_token(&headers)?;
-    let auth = state.auth.read().await;
-    let claims = auth.validate_token(&token)?;
     let role = claims.role.as_deref().unwrap_or("admin");
     if role != "admin" && role != "teacher" && role != "student" {
         return Err(AuthError::InvalidCredentials);
     }
     let user_id = claims.sub.clone();
-    drop(auth);
 
     let roadmaps = state.chat_db.list_roadmaps()
         .map_err(|_| AuthError::InvalidCredentials)?;
@@ -323,11 +301,3 @@ pub async fn get_active_roadmap(
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
-fn extract_token(headers: &axum::http::HeaderMap) -> Result<&str, AuthError> {
-    headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer "))
-        .ok_or(AuthError::InvalidToken)
-}

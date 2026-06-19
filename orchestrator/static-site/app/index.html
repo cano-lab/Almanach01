@@ -196,6 +196,12 @@
         .roadmap-card .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: var(--radius); font-weight: 600; margin-right: 8px; }
         .roadmap-card .badge.active { background: var(--accent-surface); color: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); }
         .roadmap-card .badge.inactive { background: var(--bg-secondary); color: var(--text-tertiary); border: var(--line-weight) solid var(--border); }
+        .course-card { border: var(--line-weight) solid var(--border); padding: 20px; margin-bottom: 16px; border-radius: var(--radius); background: white; }
+        .course-card h3 { font-size: 16px; margin-bottom: 4px; }
+        .course-card p { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+        .course-card .meta { font-size: 12px; color: var(--text-tertiary); margin-bottom: 12px; }
+        .course-card .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: var(--radius); font-weight: 600; margin-right: 8px; background: var(--accent-surface); color: var(--accent-teal); border: var(--line-weight) solid var(--accent-teal); }
+        .create-roadmap-form { border: var(--line-weight) solid var(--border); padding: 16px; border-radius: var(--radius); margin-top: 12px; background: var(--bg-secondary); }
         .topic-block { border-left: 3px solid var(--accent-teal); padding-left: 12px; margin: 12px 0; }
         .topic-block h4 { font-size: 14px; margin-bottom: 4px; }
         .lesson-list { margin: 8px 0 8px 16px; }
@@ -330,6 +336,7 @@
             <span class="admin-tab" id="adminTabUserPrompts" onclick="switchAdminTab('userPrompts')">User Prompts</span>
             <span class="admin-tab" id="adminTabPrompts" onclick="switchAdminTab('prompts')">System Prompts</span>
             <span class="admin-tab" id="adminTabRoadmaps" onclick="switchAdminTab('roadmaps')">Roadmaps</span>
+            <span class="admin-tab" id="adminTabCourses" onclick="switchAdminTab('courses')">Course Catalog</span>
             <span class="admin-tab" id="adminTabMetrics" onclick="switchAdminTab('metrics')">Metrics</span>
         </div>
         <div class="admin-content" id="adminPending"></div>
@@ -347,6 +354,7 @@
         <div class="admin-content hidden" id="adminUserPrompts"></div>
         <div class="admin-content hidden" id="adminPrompts"></div>
         <div class="admin-content hidden" id="adminRoadmaps"></div>
+        <div class="admin-content hidden" id="adminCourses"></div>
         <div class="admin-content hidden" id="adminMetrics"></div>
     </div>
 
@@ -1525,8 +1533,8 @@ function showAdminDashboard() { document.getElementById('adminDashboardModal').c
 function closeAdminDashboard() { document.getElementById('adminDashboardModal').classList.add('hidden'); }
 function switchAdminTab(tab) {
     currentAdminTab = tab;
-    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', roadmaps: 'adminRoadmaps', metrics: 'adminMetrics' };
-    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'roadmaps', 'metrics'];
+    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', roadmaps: 'adminRoadmaps', courses: 'adminCourses', metrics: 'adminMetrics' };
+    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'roadmaps', 'courses', 'metrics'];
     tabIds.forEach(t => {
         const btn = document.getElementById('adminTab' + t.charAt(0).toUpperCase() + t.slice(1));
         const content = document.getElementById(tabMap[t]);
@@ -1542,6 +1550,7 @@ function switchAdminTab(tab) {
     if (tab === 'userPrompts') loadAdminUserPrompts();
     if (tab === 'prompts') loadAdminSystemPrompts();
     if (tab === 'roadmaps') loadRoadmaps();
+    if (tab === 'courses') loadCourses();
     if (tab === 'metrics') loadMetrics();
 }
 
@@ -1895,13 +1904,13 @@ async function loadRoadmaps() {
             </div>
         `;
         if (roadmaps.length === 0) {
-            html += '<p style="color:var(--text-tertiary)">No roadmaps yet. Create one to start tracking student progress.</p>';
+            html += '<p style="color:var(--text-tertiary)">No roadmaps yet. <a href="#" onclick="switchAdminTab(\'courses\');return false;" style="color:var(--accent-teal);text-decoration:underline;">Browse the Course Catalog</a> to create one from a course.</p>';
         } else {
             html += roadmaps.map(r => `
                 <div class="roadmap-card">
                     <div style="display:flex;justify-content:space-between;align-items:start;">
                         <div>
-                            <h3>${escapeHtml(r.name)}</h3>
+                            <h3>${escapeHtml(r.name)} ${r.course_id ? '<span class="badge active">From course</span>' : ''}</h3>
                             <p>${escapeHtml(r.description || '')}</p>
                         </div>
                         <div style="display:flex;gap:8px;">
@@ -2002,6 +2011,81 @@ async function createLesson(topicId) {
         document.getElementById(`lessonCriteria-${topicId}`).value = '';
         loadRoadmaps();
     } catch (e) {}
+}
+
+async function loadCourses() {
+    const container = document.getElementById('adminCourses');
+    try {
+        const res = await fetch(`${API_BASE}/api/courses`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        const courses = data.courses || [];
+        let html = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="font-size:16px;">Course Catalog</h3>
+            </div>
+        `;
+        if (courses.length === 0) {
+            html += '<p style="color:var(--text-tertiary)">No courses available.</p>';
+        } else {
+            html += courses.map(c => {
+                const titleDisplay = c.title_en && c.title_en !== c.title ? `${escapeHtml(c.title)} <span style="color:var(--text-tertiary);font-size:13px;">(${escapeHtml(c.title_en)})</span>` : escapeHtml(c.title);
+                const moduleCount = c.modules ? c.modules.length : 0;
+                const lessonCount = c.modules ? c.modules.reduce((sum, m) => sum + (m.lessons ? m.lessons.length : 0), 0) : 0;
+                return `
+                    <div class="course-card">
+                        <div style="display:flex;justify-content:space-between;align-items:start;">
+                            <div>
+                                <h3>${titleDisplay}</h3>
+                                <p>${escapeHtml(c.description || '')}</p>
+                                <div class="meta">
+                                    <span class="badge">${escapeHtml(c.grade || 'N/A')}</span>
+                                    <span class="badge">${escapeHtml(c.language || 'en')}</span>
+                                    <span class="badge">${c.credit_hours || 0} cr</span>
+                                    <span class="badge">${moduleCount} module${moduleCount !== 1 ? 's' : ''}</span>
+                                    <span class="badge">${lessonCount} lesson${lessonCount !== 1 ? 's' : ''}</span>
+                                </div>
+                            </div>
+                            <button class="btn-small" onclick="showCreateRoadmapFromCourse('${c.id}')">Create Roadmap</button>
+                        </div>
+                        <div id="createRoadmapForm-${c.id}" class="create-roadmap-form hidden">
+                            <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Roadmap Name</label><input id="roadmapName-${c.id}" value="${escapeHtml(c.title)}" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;"></div>
+                            <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Description</label><textarea id="roadmapDesc-${c.id}" placeholder="What students will learn..." rows="2" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit;"></textarea></div>
+                            <div style="display:flex;gap:8px;">
+                                <button class="btn-small" onclick="createRoadmapFromCourse('${c.id}')">Create Roadmap</button>
+                                <button class="btn-small secondary" onclick="document.getElementById('createRoadmapForm-${c.id}').classList.add('hidden')">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<p class="error">Failed to load courses</p>'; }
+}
+
+function showCreateRoadmapFromCourse(courseId) {
+    const form = document.getElementById(`createRoadmapForm-${courseId}`);
+    if (form) form.classList.remove('hidden');
+}
+
+async function createRoadmapFromCourse(courseId) {
+    const name = document.getElementById(`roadmapName-${courseId}`).value.trim();
+    const description = document.getElementById(`roadmapDesc-${courseId}`).value.trim() || null;
+    if (!name) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/courses/${courseId}/create-roadmap`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description })
+        });
+        if (!res.ok) throw new Error();
+        const form = document.getElementById(`createRoadmapForm-${courseId}`);
+        if (form) form.classList.add('hidden');
+        switchAdminTab('roadmaps');
+    } catch (e) {
+        alert('Failed to create roadmap from course');
+    }
 }
 
 async function loadMetrics() {
