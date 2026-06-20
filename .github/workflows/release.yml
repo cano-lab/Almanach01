@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-action@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build orchestrator
+        run: cargo build --release -p almanach-orchestrator
+
+      - name: Strip binary
+        run: strip target/release/almanach-orchestrator
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: almanach-orchestrator
+          path: target/release/almanach-orchestrator
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: almanach-orchestrator
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: almanach-orchestrator
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
