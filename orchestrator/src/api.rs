@@ -9,7 +9,6 @@ use axum::{
 use axum::response::sse::Event;
 use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
-use secrecy::ExposeSecret;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -137,13 +136,14 @@ pub struct ApiKeyInfo {
 
 pub async fn list_api_keys(State(state): State<Arc<AppState>>) -> Json<Vec<ApiKeyInfo>> {
     let providers = ["zai", "anthropic", "openai", "kimi", "google", "augure"];
+    let keys = state.api_keys.read().await;
 
     Json(
         providers
             .iter()
             .map(|p| ApiKeyInfo {
                 provider: p.to_string(),
-                has_key: state.api_keys.contains_key(*p),
+                has_key: keys.contains_key(*p),
             })
             .collect(),
     )
@@ -271,8 +271,9 @@ pub async fn list_provider_models(
     // Read API key
     let api_key = state
         .api_keys
+        .read().await
         .get(&provider)
-        .map(|s| s.expose_secret().to_string())
+        .cloned()
         .ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
@@ -587,8 +588,9 @@ async fn do_compact_conversation(
     let provider = "kimi";
     let api_key = state
         .api_keys
+        .read().await
         .get(provider)
-        .map(|s| s.expose_secret().to_string())
+        .cloned()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
 
     // Call LLM for summary
@@ -845,8 +847,9 @@ pub async fn send_message(
     // Get API key
     let api_key = state
         .api_keys
+        .read().await
         .get(&provider)
-        .map(|s| s.expose_secret().to_string())
+        .cloned()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
 
     // Call Kimi API (or other provider)
@@ -984,8 +987,8 @@ pub async fn stream_conversation(
         }
     };
 
-    let api_key = state.api_keys.get(&provider)
-        .map(|s| s.expose_secret().to_string())
+    let api_key = state.api_keys.read().await.get(&provider)
+        .cloned()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
 
     let temperature = state
@@ -1219,8 +1222,9 @@ pub async fn chat_stream(
     // Get API key
     let api_key = state
         .api_keys
+        .read().await
         .get(&provider)
-        .map(|s| s.expose_secret().to_string())
+        .cloned()
         .ok_or_else(|| (StatusCode::BAD_REQUEST, format!("No API key for provider: {}", provider)))?;
 
     let client = reqwest::Client::new();
@@ -1366,8 +1370,8 @@ async fn handle_chat_ws(
                     let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
                     let model = req.model.unwrap_or_else(|| "kimi-k2.6".to_string());
 
-                    let api_key = match state.api_keys.get(&provider) {
-                        Some(k) => k.expose_secret().clone(),
+                    let api_key = match state.api_keys.read().await.get(&provider) {
+                        Some(k) => k.clone(),
                         None => continue,
                     };
 

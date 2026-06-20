@@ -166,6 +166,8 @@ async fn main() -> anyhow::Result<()> {
         let proxy_config = anthropic_proxy::ProxyConfig {
             target_base_url: proxy_target,
             api_key: proxy_api_key,
+            bind_localhost_only: false,
+            proxy_api_key: None,
         };
         
         tokio::spawn(async move {
