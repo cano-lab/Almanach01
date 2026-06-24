@@ -718,6 +718,58 @@ pub async fn admin_approve_user(
     })))
 }
 
+/// POST /api/admin/users/:id/approve
+///
+/// Compatibility endpoint for the static admin UI. The canonical endpoint is
+/// POST /api/admin/approve-user with { user_id, action }.
+pub async fn admin_approve_user_path(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    axum::extract::Path(user_id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, AuthError> {
+    use crate::chat_db::ApprovalStatus;
+
+    let caller_role = claims.role.as_deref().unwrap_or("admin");
+    if caller_role != "admin" {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    state.chat_db.update_user_status(&user_id, ApprovalStatus::Approved)
+        .map_err(|_| AuthError::InvalidCredentials)?;
+
+    Ok(Json(serde_json::json!({
+        "user_id": user_id,
+        "action": "approve",
+        "status": ApprovalStatus::Approved.as_str(),
+    })))
+}
+
+/// POST /api/admin/users/:id/reject
+///
+/// Compatibility endpoint for the static admin UI. The canonical endpoint is
+/// POST /api/admin/approve-user with { user_id, action }.
+pub async fn admin_reject_user_path(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<Claims>,
+    axum::extract::Path(user_id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, AuthError> {
+    use crate::chat_db::ApprovalStatus;
+
+    let caller_role = claims.role.as_deref().unwrap_or("admin");
+    if caller_role != "admin" {
+        return Err(AuthError::InvalidCredentials);
+    }
+
+    state.chat_db.update_user_status(&user_id, ApprovalStatus::Rejected)
+        .map_err(|_| AuthError::InvalidCredentials)?;
+
+    Ok(Json(serde_json::json!({
+        "user_id": user_id,
+        "action": "reject",
+        "status": ApprovalStatus::Rejected.as_str(),
+    })))
+}
+
 /// GET /api/admin/pending-users
 ///
 /// Admin-only endpoint to list all pending users.

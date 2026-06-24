@@ -361,7 +361,7 @@
     <div class="modal-overlay hidden" id="settingsModal">
       <div class="modal" style="width:420px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;">
         <h2>Settings</h2>
-        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">API keys are stored server-side and never returned to the UI.</p>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">API keys are configured on the server with environment variables and are never returned to the UI.</p>
         <div id="settingsContent" style="overflow-y:auto;flex:1;"></div>
         <button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);margin-top:16px;flex-shrink:0;" onclick="document.getElementById('settingsModal').classList.add('hidden')">Close</button>
       </div>
@@ -488,17 +488,14 @@ async function loadApiKeys() {
       const status = info.has_key
         ? '<span style="color:var(--accent-teal);font-size:12px;">Configured</span>'
         : '<span style="color:var(--text-tertiary);font-size:12px;">Not set</span>';
+      const envName = provider.toUpperCase() + '_API_KEY';
       return `
         <div style="margin-bottom:16px;padding:12px;background:var(--bg-secondary);border-radius:var(--radius);border:var(--line-weight) solid var(--border);">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
             <strong style="text-transform:capitalize">${provider}</strong>
             ${status}
           </div>
-          <input type="password" id="key-${provider}" placeholder="Enter ${provider} API key" style="width:100%;padding:8px;border-radius:var(--radius);border:var(--line-weight) solid var(--border);background:var(--bg-primary);color:var(--text-primary);margin-bottom:8px;box-sizing:border-box;">
-          <div style="display:flex;gap:8px;">
-            <button class="btn" style="flex:1" onclick="saveApiKey('${provider}')">Save</button>
-            <button class="btn" style="flex:1;background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);" onclick="removeApiKey('${provider}')">Remove</button>
-          </div>
+          <p style="font-size:12px;color:var(--text-secondary);margin:0;">Set <code>${envName}</code> in the server environment, then restart Almanach.</p>
         </div>
       `;
     }).join('');
@@ -1604,11 +1601,11 @@ async function loadAdminGrid() {
 }
 
 async function approveUser(id) {
-    try { await fetch(`${API_BASE}/api/admin/users/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminPending(); if (currentAdminTab === 'all') loadAdminUsers(); if (currentAdminTab === 'grid') loadAdminGrid(); } catch (e) {}
+    try { await fetch(`${API_BASE}/api/admin/approve-user`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: id, action: 'approve' }) }); loadAdminPending(); if (currentAdminTab === 'all') loadAdminUsers(); if (currentAdminTab === 'grid') loadAdminGrid(); } catch (e) {}
 }
 
 async function rejectUser(id) {
-    try { await fetch(`${API_BASE}/api/admin/users/${id}/reject`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminPending(); } catch (e) {}
+    try { await fetch(`${API_BASE}/api/admin/approve-user`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: id, action: 'reject' }) }); loadAdminPending(); } catch (e) {}
 }
 
 async function loadAdminUserChats() {
@@ -2019,7 +2016,7 @@ async function loadCourses() {
         const res = await fetch(`${API_BASE}/api/courses`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        const courses = data.courses || [];
+        const courses = Array.isArray(data) ? data : (data.courses || []);
         let html = `
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
                 <h3 style="font-size:16px;">Course Catalog</h3>
@@ -2030,8 +2027,8 @@ async function loadCourses() {
         } else {
             html += courses.map(c => {
                 const titleDisplay = c.title_en && c.title_en !== c.title ? `${escapeHtml(c.title)} <span style="color:var(--text-tertiary);font-size:13px;">(${escapeHtml(c.title_en)})</span>` : escapeHtml(c.title);
-                const moduleCount = c.modules ? c.modules.length : 0;
-                const lessonCount = c.modules ? c.modules.reduce((sum, m) => sum + (m.lessons ? m.lessons.length : 0), 0) : 0;
+                const moduleCount = c.module_count ?? (c.modules ? c.modules.length : 0);
+                const lessonCount = c.lesson_count ?? (c.modules ? c.modules.reduce((sum, m) => sum + (m.lessons ? m.lessons.length : 0), 0) : 0);
                 return `
                     <div class="course-card">
                         <div style="display:flex;justify-content:space-between;align-items:start;">

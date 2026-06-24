@@ -7,7 +7,6 @@ use axum::{
     Json,
 };
 use axum::response::sse::Event;
-use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1593,8 +1592,24 @@ pub async fn list_courses(
     let courses = state.chat_db.list_courses()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let json_courses = courses.into_iter().map(|c| {
-        serde_json::json!({
+    // Return the catalog as the legacy bare array, but include enough nested
+    // module/lesson metadata for the admin UI to show useful counts without a
+    // second request per course.
+    let mut json_courses = Vec::new();
+    for c in courses {
+        let mut modules = state.chat_db.get_course_modules(&c.id)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        let mut lesson_count = 0usize;
+        for module in &mut modules {
+            let lessons = state.chat_db.get_module_lessons(&module.id)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            lesson_count += lessons.len();
+            module.lessons = lessons;
+        }
+
+        let module_count = modules.len();
+        json_courses.push(serde_json::json!({
             "id": c.id,
             "title": c.title,
             "title_en": c.title_en,
@@ -1602,8 +1617,28 @@ pub async fn list_courses(
             "grade": c.grade,
             "language": c.language,
             "credit_hours": c.credit_hours,
-        })
-    }).collect();
+            "module_count": module_count,
+            "lesson_count": lesson_count,
+            "modules": modules.into_iter().map(|m| serde_json::json!({
+                "id": m.id,
+                "title": m.title,
+                "title_en": m.title_en,
+                "description": m.description,
+                "order": m.order_index,
+                "estimated_hours": m.estimated_hours,
+                "lessons": m.lessons.into_iter().map(|l| serde_json::json!({
+                    "id": l.id,
+                    "title": l.title,
+                    "title_en": l.title_en,
+                    "description": l.description,
+                    "topics": l.topics,
+                    "objectives": l.objectives,
+                    "estimated_minutes": l.estimated_minutes,
+                    "order": l.order_index,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+        }));
+    }
 
     Ok(Json(json_courses))
 }

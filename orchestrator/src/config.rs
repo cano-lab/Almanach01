@@ -154,7 +154,7 @@ fn default_orchestrator_host() -> String {
 }
 
 fn default_static_dir() -> Option<String> {
-    Some("tauri-app/dist".to_string())
+    Some("./static-site".to_string())
 }
 
 fn default_runtime_socket() -> String {
@@ -229,7 +229,7 @@ pub fn load() -> anyhow::Result<Config> {
     let mut builder = config::Config::builder()
         .set_default("port", 3001)?
         .set_default("host", "127.0.0.1")?
-        .set_default("static-dir", None::<String>)?
+        .set_default("static-dir", "./static-site")?
         .set_default("deployment-mode", "windows-wsl")?
         .set_default("network-backend", "tailscale")?
         .set_default("runtime-socket", "/var/run/almanach.sock")?
