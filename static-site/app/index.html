@@ -235,7 +235,7 @@
 <body>
     <div id="sidebar">
         <div class="sidebar-header">
-            <h1>Claw<span>Pen</span></h1>
+            <h1>Alma<span>nach</span></h1>
             <button id="adminBtn" class="action-btn" style="display:none">Admin</button>
         </div>
         <button class="new-chat-btn" onclick="createNewChat()">+ New Chat</button>
@@ -2062,6 +2062,7 @@ async function createLesson(topicId) {
 
 async function loadCourses() {
     const container = document.getElementById('adminCourses');
+    container.innerHTML = '<p class="loading-state">Loading courses...</p>';
     try {
         const res = await fetch(`${API_BASE}/api/courses`, { headers: { 'Authorization': `Bearer ${token}` } });
         if (!res.ok) throw new Error();
@@ -2080,20 +2081,21 @@ async function loadCourses() {
                 const moduleCount = c.module_count ?? (c.modules ? c.modules.length : 0);
                 const lessonCount = c.lesson_count ?? (c.modules ? c.modules.reduce((sum, m) => sum + (m.lessons ? m.lessons.length : 0), 0) : 0);
                 return `
-                    <div class="course-card">
+                    <div class="course-card" style="margin-bottom:16px;">
                         <div style="display:flex;justify-content:space-between;align-items:start;">
-                            <div>
+                            <div style="flex:1;">
                                 <h3>${titleDisplay}</h3>
                                 <p>${escapeHtml(c.description || '')}</p>
                                 <div class="meta">
                                     <span class="badge">${escapeHtml(c.grade || 'N/A')}</span>
                                     <span class="badge">${escapeHtml(c.language || 'en')}</span>
                                     <span class="badge">${c.credit_hours || 0} cr</span>
-                                    <span class="badge">${moduleCount} module${moduleCount !== 1 ? 's' : ''}</span>
-                                    <span class="badge">${lessonCount} lesson${lessonCount !== 1 ? 's' : ''}</span>
                                 </div>
                             </div>
-                            <button class="btn-small" onclick="showCreateRoadmapFromCourse('${c.id}')">Create Roadmap</button>
+                            <div style="display:flex;gap:8px;flex-direction:column;align-items:flex-end;">
+                                <button class="btn-small" onclick="showCreateRoadmapFromCourse('${c.id}')">Create Roadmap</button>
+                                <button class="btn-small secondary" onclick="loadCourseDetail('${c.id}')">View Lessons</button>
+                            </div>
                         </div>
                         <div id="createRoadmapForm-${c.id}" class="create-roadmap-form hidden">
                             <div class="form-group"><label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Roadmap Name</label><input id="roadmapName-${c.id}" value="${escapeHtml(c.title)}" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;"></div>
@@ -2103,12 +2105,68 @@ async function loadCourses() {
                                 <button class="btn-small secondary" onclick="document.getElementById('createRoadmapForm-${c.id}').classList.add('hidden')">Cancel</button>
                             </div>
                         </div>
+                        <div id="courseDetail-${c.id}" style="margin-top:16px;border-top:var(--line-weight) solid var(--border);padding-top:16px;"></div>
                     </div>
                 `;
             }).join('');
         }
         container.innerHTML = html;
     } catch (e) { container.innerHTML = '<p class="error">Failed to load courses</p>'; }
+}
+
+async function loadCourseDetail(courseId) {
+    const detailDiv = document.getElementById(`courseDetail-${courseId}`);
+    if (!detailDiv) return;
+    if (detailDiv.dataset.loaded === 'true') {
+        detailDiv.innerHTML = '';
+        detailDiv.dataset.loaded = 'false';
+        return;
+    }
+    detailDiv.innerHTML = '<p style="color:var(--text-tertiary);font-size:13px;">Loading lessons...</p>';
+    try {
+        const res = await fetch(`${API_BASE}/api/courses/${courseId}`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) throw new Error();
+        const course = await res.json();
+        const modules = course.modules || [];
+        let html = '';
+        if (modules.length === 0) {
+            html = '<p style="color:var(--text-tertiary);">No modules in this course.</p>';
+        } else {
+            let totalLessons = 0;
+            modules.forEach(m => totalLessons += (m.lessons ? m.lessons.length : 0));
+            html += `<p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">${modules.length} modules · ${totalLessons} lessons</p>`;
+            modules.forEach(mod => {
+                const lessons = mod.lessons || [];
+                html += `
+                    <div style="margin-bottom:16px;">
+                        <h4 style="font-size:15px;font-weight:700;color:var(--accent-teal);margin-bottom:8px;">${escapeHtml(mod.title)}</h4>
+                        ${mod.description ? `<p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">${escapeHtml(mod.description)}</p>` : ''}
+                        <div style="margin-left:12px;">
+                `;
+                if (lessons.length === 0) {
+                    html += '<p style="font-size:13px;color:var(--text-tertiary);">No lessons</p>';
+                } else {
+                    lessons.forEach(l => {
+                        html += `
+                            <div class="lesson-item" style="padding:8px 0;border-bottom:1px solid var(--bg-secondary);">
+                                <div style="flex:1;">
+                                    <div style="font-weight:600;font-size:14px;">${escapeHtml(l.title)}</div>
+                                    ${l.title_en && l.title_en !== l.title ? `<div style="font-size:12px;color:var(--text-tertiary);">${escapeHtml(l.title_en)}</div>` : ''}
+                                    ${l.description ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${escapeHtml(l.description)}</div>` : ''}
+                                    ${l.estimated_minutes ? `<div style="font-size:11px;color:var(--text-tertiary);margin-top:4px;">~${l.estimated_minutes} min</div>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                html += '</div></div>';
+            });
+        }
+        detailDiv.innerHTML = html;
+        detailDiv.dataset.loaded = 'true';
+    } catch (e) {
+        detailDiv.innerHTML = '<p class="error" style="font-size:13px;">Failed to load course details</p>';
+    }
 }
 
 function showCreateRoadmapFromCourse(courseId) {

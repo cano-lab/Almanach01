@@ -3,848 +3,387 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Almanach</title>
+    <title>Almanach — AI Learning Companion</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a1a2e;
-            color: #eee;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f7f5f0;
+            color: #1a1a1a;
+            line-height: 1.6;
             min-height: 100vh;
         }
         
-        .app {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
-        }
-        
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            border-bottom: 1px solid #333;
-            padding-bottom: 1rem;
-        }
-        
-        .header h1 {
-            font-size: 1.8rem;
-            color: #f0f0f0;
-        }
-
-        .nav {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .nav-link {
-            background: transparent;
-            color: #94a3b8;
-            border: 1px solid #333;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .nav-link:hover {
-            background: #333;
-            color: #fff;
-        }
-
-        .nav-link.active {
-            background: #e94560;
-            color: white;
-            border-color: #e94560;
-        }
-
-        .btn-logout {
-            background: transparent;
-            color: #94a3b8;
-            border: 1px solid #333;
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        
-        .btn-logout:hover {
-            background: #333;
-            color: #fff;
-        }
-        
-        .toolbar {
-            margin-bottom: 1.5rem;
-        }
-        
-        .btn-primary {
-            background: #e94560;
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 6px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-            width: 100%;
-        }
-        
-        .btn-primary:hover {
-            background: #ff6b6b;
-        }
-        
-        .btn-primary:disabled {
-            background: #4a4a5e;
-            cursor: not-allowed;
-        }
-        
-        /* Login Styles */
-        .login-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        
-        .login-box {
-            background: #16213e;
-            border-radius: 16px;
-            padding: 2.5rem;
-            width: 100%;
-            max-width: 400px;
-            border: 1px solid #0f3460;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-        
-        .login-box h1 {
-            text-align: center;
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .login-box h2 {
-            text-align: center;
-            color: #94a3b8;
-            font-size: 1.2rem;
-            margin-bottom: 1.5rem;
-        }
-        
-        .setup-message {
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        
-        .setup-message h2 {
-            color: #e94560;
-            margin-bottom: 0.5rem;
-        }
-        
-        .setup-message p {
-            color: #94a3b8;
-        }
-        
-        .form-group {
-            margin-bottom: 1rem;
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 0.875rem 1rem;
-            border: 1px solid #0f3460;
-            border-radius: 8px;
-            background: #1a1a2e;
-            color: #eee;
-            font-size: 1rem;
-        }
-        
-        .form-group input:focus {
-            outline: none;
-            border-color: #e94560;
-        }
-        
-        .form-group input::placeholder {
-            color: #6b7280;
-        }
-        
-        .error-message {
-            background: #7f1d1d;
-            color: #fecaca;
-            padding: 0.75rem;
-            border-radius: 6px;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-        
-        .loading {
-            text-align: center;
-            color: #94a3b8;
-            padding: 2rem;
-        }
-        
-        /* Agent Grid Styles */
-        .agents-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 1.5rem;
-        }
-        
-        .agent-card {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 1.5rem;
-            border: 1px solid #0f3460;
-        }
-        
-        .agent-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-        
-        .agent-header h3 {
-            font-size: 1.2rem;
-        }
-        
-        .status-running { color: #4ade80; }
-        .status-stopped { color: #94a3b8; }
-        .status-starting, .status-stopping { color: #fbbf24; }
-        .status-error { color: #ef4444; }
-        
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.5rem 0;
-            border-bottom: 1px solid #1a1a2e;
-        }
-        
-        .info-row .label {
-            color: #94a3b8;
-        }
-        
-        .info-row .value.local {
-            color: #22c55e;
-        }
-        
-        .info-row .value.local::after {
-            content: " ⚡";
-        }
-        
-        .agent-actions {
-            margin-top: 1rem;
-            display: flex;
-            gap: 0.5rem;
-        }
-        
-        .agent-actions button {
-            flex: 1;
-            padding: 0.5rem;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-        
-        .btn-start {
-            background: #22c55e;
-            color: white;
-        }
-        
-        .btn-stop {
-            background: #ef4444;
-            color: white;
-        }
-        
-        .btn-chat {
-            background: #3b82f6;
-            color: white;
-        }
-        
-        .btn-config {
-            background: #6b7280;
-            color: white;
-        }
-        
-        .empty-state {
-            grid-column: 1 / -1;
-            text-align: center;
-            padding: 3rem;
-            color: #94a3b8;
-        }
-
-        /* Teams Styles */
-        .teams-container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .team-roles {
-            margin-top: 1rem;
-        }
-
-        .grid {
-            display: grid;
-        }
-
-        .grid-cols-1 {
-            grid-template-columns: repeat(1, minmax(0, 1fr));
-        }
-
-        @media (min-width: 768px) {
-            .md\:grid-cols-2 {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-        }
-
-        @media (min-width: 1024px) {
-            .lg\:grid-cols-3 {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-        }
-
-        .space-y-1 > * + * {
-            margin-top: 0.25rem;
-        }
-
-        .space-y-2 > * + * {
-            margin-top: 0.5rem;
-        }
-
-        .space-x-2 > * + * {
-            margin-left: 0.5rem;
-        }
-
-        .flex-wrap {
-            flex-wrap: wrap;
-        }
-
-        /* Side Panel Dashboard Styles */
-        .dashboard-container {
-            display: flex;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        .sidebar {
-            width: 280px;
-            background: #16213e;
-            border-right: 1px solid #0f3460;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .sidebar-header {
-            padding: 20px;
-            border-bottom: 1px solid #0f3460;
-        }
-
-        .sidebar-header h1 {
-            font-size: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: #f0f0f0;
-        }
-
-        .agent-list {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-
-        .agent-card {
-            background: #1a1a2e;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            border: 2px solid transparent;
-            transition: all 0.2s;
-        }
-
-        .agent-card:hover {
-            border-color: #e94560;
-        }
-
-        .agent-card.active {
-            border-color: #e94560;
-            background: rgba(233, 69, 96, 0.1);
-        }
-
-        .agent-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-        }
-
-        .agent-card-header .name {
-            font-weight: 600;
-            font-size: 1rem;
-        }
-
-        .agent-card-header .status {
-            font-size: 0.75rem;
-            color: #94a3b8;
-            text-transform: lowercase;
-        }
-
-        .agent-card-header .status.running {
-            color: #22c55e;
-        }
-
-        .agent-card-header .status.stopped {
-            color: #94a3b8;
-        }
-
-        .agent-card-header .status.starting,
-        .agent-card-header .status.stopping {
-            color: #fbbf24;
-        }
-
-        .agent-card-header .status.error {
-            color: #ef4444;
-        }
-
-        .agent-card-actions {
-            display: flex;
-            gap: 6px;
-        }
-
-        .action-btn {
-            background: #0f3460;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 10px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-
-        .action-btn:hover {
-            background: #e94560;
-        }
-
-        .action-btn.disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .action-btn.disabled:hover {
-            background: #0f3460;
-        }
-
-        .sidebar-footer {
-            padding: 15px;
-            border-top: 1px solid #0f3460;
-        }
-
-        .btn-refresh {
-            width: 100%;
-            padding: 10px;
-            border: none;
-            border-radius: 6px;
-            background: #e94560;
-            color: white;
-            cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 500;
-            transition: background 0.2s;
-        }
-
-        .btn-refresh:hover {
-            background: #ff6b6b;
-        }
-
-        .main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #0f0f1a;
-        }
-
-        .empty-main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #94a3b8;
-        }
-
-        .empty-main .emoji {
-            font-size: 4rem;
-            margin-bottom: 20px;
-        }
-
-        .empty-main h2 {
-            margin-bottom: 10px;
-            color: #f0f0f0;
-        }
-
-        .loading-state {
-            text-align: center;
-            padding: 2rem;
-            color: #94a3b8;
-        }
-
-        /* Modal Styles */
-        .modal-overlay {
+        /* Top-right app button */
+        .app-corner-btn {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 2rem;
-            width: 90%;
-            max-width: 500px;
-            border: 1px solid #0f3460;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-        }
-
-        .modal-header h2 {
-            font-size: 1.5rem;
-            color: #f0f0f0;
-        }
-
-        .modal-close {
-            background: transparent;
-            border: none;
-            color: #94a3b8;
-            font-size: 2rem;
-            cursor: pointer;
-            padding: 0;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-close:hover {
-            color: #f0f0f0;
-        }
-
-        .modal-body {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-        }
-
-        .modal-body .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .modal-body .form-group label {
-            font-weight: 500;
-            color: #f0f0f0;
-        }
-
-        .modal-body .form-group select {
-            padding: 0.75rem;
-            border: 1px solid #0f3460;
-            border-radius: 8px;
-            background: #1a1a2e;
-            color: #eee;
-            font-size: 1rem;
-        }
-
-        .modal-body .form-group select:focus {
-            outline: none;
-            border-color: #e94560;
-        }
-
-        .modal-body .form-group select:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .modal-actions {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 1rem;
-        }
-
-        .btn-danger {
-            background: #ef4444;
+            top: 24px;
+            right: 24px;
+            z-index: 100;
+            padding: 12px 24px;
+            background: #2a7f7f;
             color: white;
             border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 6px;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: background 0.2s;
-            flex: 1;
-        }
-
-        .btn-danger:hover {
-            background: #dc2626;
-        }
-
-        .success-message {
-            background: #065f46;
-            color: #d1fae5;
-            padding: 0.75rem;
-            border-radius: 6px;
-            margin-bottom: 1rem;
-            font-size: 0.9rem;
-        }
-
-        .info-message {
-            background: #1e3a8a;
-            color: #dbeafe;
-            padding: 0.75rem;
-            border-radius: 6px;
-            font-size: 0.9rem;
-        }
-
-        .current-assignments {
-            margin-top: 1rem;
-            padding: 1rem;
-            background: #1a1a2e;
             border-radius: 8px;
-            border: 1px solid #0f3460;
-        }
-
-        .current-assignments h4 {
-            margin-bottom: 0.5rem;
-            color: #f0f0f0;
-        }
-
-        .current-assignments ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .current-assignments li {
-            padding: 0.5rem;
-            border-bottom: 1px solid #0f3460;
-        }
-
-        .current-assignments li:last-child {
-            border-bottom: none;
-        }
-
-        .action-btn.hidden {
-            display: none;
-        }
-
-        .agent-card-meta {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-        }
-
-        .runtime-tag, .project-tag {
-            font-size: 0.75rem;
-            padding: 2px 8px;
-            border-radius: 4px;
-            background: #0f3460;
-            color: #94a3b8;
-        }
-
-        /* Logs Panel Styles */
-        .logs-panel {
-            display: flex;
-            flex-direction: column;
-            height: 100%;
-            background: #0f0f1a;
-        }
-
-        .logs-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px 20px;
-            border-bottom: 1px solid #0f3460;
-            background: #16213e;
-        }
-
-        .logs-title {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            font-size: 14px;
             font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 2px 8px rgba(42, 127, 127, 0.3);
+            transition: all 0.2s ease;
+        }
+        
+        .app-corner-btn:hover {
+            background: #1f6b6b;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(42, 127, 127, 0.4);
+        }
+        
+        .app-corner-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+        
+        /* Hero */
+        .hero {
+            padding: 120px 24px 80px;
+            max-width: 720px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 16px;
+            color: #1a1a1a;
+        }
+        
+        .hero h1 span {
+            color: #2a7f7f;
+        }
+        
+        .hero-subtitle {
+            font-size: 22px;
+            color: #5a5a5a;
+            margin-bottom: 40px;
+            font-weight: 400;
+        }
+        
+        .hero-desc {
+            font-size: 18px;
+            color: #5a5a5a;
+            max-width: 600px;
+            margin: 0 auto 48px;
+            line-height: 1.7;
+        }
+        
+        .cta-btn {
+            display: inline-block;
+            padding: 16px 40px;
+            background: #2a7f7f;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .cta-btn:hover {
+            background: #1f6b6b;
+            transform: translateY(-1px);
+        }
+        
+        /* Features */
+        .features {
+            padding: 80px 24px;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 32px;
+        }
+        
+        .feature-card {
+            padding: 32px;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid #e8e2d8;
+            transition: all 0.2s ease;
+        }
+        
+        .feature-card:hover {
+            border-color: #2a7f7f;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        }
+        
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+        
+        .feature-card h3 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #1a1a1a;
+        }
+        
+        .feature-card p {
+            font-size: 15px;
+            color: #5a5a5a;
+            line-height: 1.6;
+        }
+        
+        /* Philosophy section */
+        .philosophy {
+            padding: 80px 24px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        
+        .philosophy-inner {
+            max-width: 720px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        .philosophy h2 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 24px;
             color: #f0f0f0;
         }
-
-        .logs-icon {
-            font-size: 1.2rem;
-        }
-
-        .status-indicator {
-            font-size: 0.75rem;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: 500;
-        }
-
-        .status-indicator.connected {
-            background: #065f46;
-            color: #4ade80;
-        }
-
-        .status-indicator.disconnected {
-            background: #7f1d1d;
-            color: #ef4444;
-        }
-
-        .logs-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .btn-clear {
-            background: #0f3460;
-            border: none;
-            border-radius: 6px;
-            padding: 6px 12px;
-            color: #eee;
-            cursor: pointer;
-            font-size: 0.85rem;
-            transition: background 0.2s;
-        }
-
-        .btn-clear:hover {
-            background: #e94560;
-        }
-
-        .btn-close {
-            background: transparent;
-            border: none;
+        
+        .philosophy-quote {
+            font-size: 20px;
+            font-style: italic;
             color: #94a3b8;
-            font-size: 1.5rem;
-            cursor: pointer;
-            padding: 0;
-            width: 32px;
-            height: 32px;
+            margin-bottom: 32px;
+            line-height: 1.7;
+        }
+        
+        .philosophy p {
+            font-size: 16px;
+            color: #94a3b8;
+            line-height: 1.7;
+            margin-bottom: 16px;
+        }
+        
+        /* How it works */
+        .how-it-works {
+            padding: 80px 24px;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+        
+        .how-it-works h2 {
+            font-size: 36px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 48px;
+            color: #1a1a1a;
+        }
+        
+        .step {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 40px;
+            align-items: flex-start;
+        }
+        
+        .step-number {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #2a7f7f;
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-        }
-
-        .btn-close:hover {
-            color: #f0f0f0;
-        }
-
-        .logs-error {
-            padding: 10px 20px;
-            background: #7f1d1d;
-            color: #fecaca;
-            font-size: 0.9rem;
-        }
-
-        .logs-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px 20px;
-            background: #0a0a14;
-        }
-
-        .logs-content pre {
-            font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            color: #e2e8f0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            margin: 0;
-        }
-
-        .health-dot {
-            display: inline-block;
-            font-size: 0.6rem;
-            vertical-align: middle;
+            font-size: 20px;
+            font-weight: 700;
+            flex-shrink: 0;
         }
         
-        .health-dot.health-healthy {
-            filter: brightness(1.2);
+        .step-content h3 {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #1a1a1a;
         }
         
-        .health-dot.health-unhealthy {
-            filter: grayscale(0.3) brightness(0.8);
-        }
-
-        .chat-header-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex: 1;
+        .step-content p {
+            font-size: 16px;
+            color: #5a5a5a;
+            line-height: 1.6;
         }
         
-        .agent-switcher {
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
-            border-radius: 6px;
-            padding: 4px 8px;
-            color: #eee;
-            font-size: 0.85rem;
-            cursor: pointer;
-            max-width: 200px;
+        /* Footer */
+        .footer {
+            padding: 40px 24px;
+            text-align: center;
+            border-top: 1px solid #e8e2d8;
         }
         
-        .agent-switcher:focus {
-            outline: none;
-            border-color: #e94560;
+        .footer p {
+            font-size: 14px;
+            color: #8a8a8a;
         }
         
-        .agent-switcher option:disabled {
-            color: #666;
-            font-style: italic;
+        .footer a {
+            color: #2a7f7f;
+            text-decoration: none;
         }
-
-        .stop-btn:hover {
-            background: #ef4444;
+        
+        .footer a:hover {
+            text-decoration: underline;
         }
-
-        .logs-btn:hover {
-            background: #3b82f6;
+        
+        /* Responsive */
+        @media (max-width: 640px) {
+            .hero h1 { font-size: 40px; }
+            .hero-subtitle { font-size: 18px; }
+            .hero-desc { font-size: 16px; }
+            .app-corner-btn {
+                top: 16px;
+                right: 16px;
+                padding: 10px 16px;
+                font-size: 13px;
+            }
+            .features-grid { grid-template-columns: 1fr; }
+            .step { flex-direction: column; gap: 16px; }
         }
     </style>
-
-<link rel="modulepreload" href="/almanach-ui-6921688ba1b997ea.js" crossorigin=anonymous integrity="sha384-8Pycx4F5IUU5/jfQyIOdn8pr5NLOAA4+4CGmIz3AjVk4wA4n66Gj29FZpRFUk82h">
-<link rel="preload" href="/almanach-ui-6921688ba1b997ea_bg.wasm" crossorigin=anonymous integrity="sha384-cOX91b/LkTZP1SIF1pmPlOz1ov6x7tpk626EawmZqI5XwL8W199KLm38L4wbRAA6" as="fetch" type="application/wasm"></head>
+</head>
 <body>
-    <script type="module">
-        import init from './wasm.js';
-        init();
-    </script>
+    <!-- App access button in corner -->
+    <a href="/app/" class="app-corner-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        Open App
+    </a>
 
-<script type="module" nonce="oKpheoOuw+YHefKj7hhuDw==">
-import init, * as bindings from '/almanach-ui-6921688ba1b997ea.js';
-const wasm = await init('/almanach-ui-6921688ba1b997ea_bg.wasm');
+    <!-- Hero -->
+    <section class="hero">
+        <h1>Alma<span>nach</span></h1>
+        <p class="hero-subtitle">An AI companion for every student</p>
+        <p class="hero-desc">
+            Almanach is not a tutor that watches over your shoulder. It is a patient companion 
+            that walks beside you — noticing when you are stuck, celebrating when you figure it out, 
+            and gently nudging you back when you wander too far from the path you chose.
+        </p>
+        <a href="/app/" class="cta-btn">Enter the Classroom</a>
+    </section>
 
+    <!-- Features -->
+    <section class="features">
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>Patient Guidance</h3>
+                <p>No timers. No pressure. Almanach waits for you to think, offers hints only when you ask, and never rushes you toward an answer you do not yet understand.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🌿</div>
+                <h3>Gentle Nudges</h3>
+                <p>When a student wanders off-topic, Almanach does not sound an alarm. It offers a bridge: "That is interesting — want to see how it connects to what we were doing?"</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📊</div>
+                <h3>Teacher Insights</h3>
+                <p>Teachers see soft signals, not red alerts. "Three students spent extra time on fractions today" — a quiet note, not a ticket to resolve.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎯</div>
+                <h3>Curriculum Aligned</h3>
+                <p>Built on the Ontario MTH1W curriculum. Every lesson, every exercise, every conversation is mapped to real learning objectives.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>Privacy First</h3>
+                <p>Runs on your hardware. Student data never leaves the classroom. No cloud dependencies, no surveillance, no data mining.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎨</div>
+                <h3>Accessible by Design</h3>
+                <p>OpenDyslexic font support, bionic reading mode, high-contrast options. Built for every brain, not just the average one.</p>
+            </div>
+        </div>
+    </section>
 
-window.wasmBindings = bindings;
+    <!-- Philosophy -->
+    <section class="philosophy">
+        <div class="philosophy-inner">
+            <h2>The Philosophy</h2>
+            <p class="philosophy-quote">
+                "The AI is a companion, not a prison guard. The teacher is a guide, not a warden."
+            </p>
+            <p>
+                We believe students are allowed to wander. A child who starts coding a small game 
+                during a math lesson is not "off-topic" — they are engaged. The role of Almanach 
+                is to notice, to celebrate, and to offer a gentle path back, never a forced march.
+            </p>
+            <p>
+                Teachers receive insights, not alerts. There are no orange warning banners, 
+                no "off-topic" labels, no panic signals. Just soft, actionable notes that help 
+                teachers understand their students better.
+            </p>
+        </div>
+    </section>
 
+    <!-- How it works -->
+    <section class="how-it-works">
+        <h2>How It Works</h2>
+        <div class="step">
+            <div class="step-number">1</div>
+            <div class="step-content">
+                <h3>Student Opens Almanach</h3>
+                <p>They see their current lesson, their progress, and a friendly chat interface. They can ask questions, work through problems, or explore related topics.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-number">2</div>
+            <div class="step-content">
+                <h3>AI Companion Engages</h3>
+                <p>Almanach responds with patience. It tracks understanding without testing. It notices confusion before the student asks for help. It celebrates breakthroughs quietly.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-number">3</div>
+            <div class="step-content">
+                <h3>Teacher Receives Insights</h3>
+                <p>A simple dashboard shows where the class is thriving, where individuals are struggling, and who might need a gentle check-in. No alerts. Just awareness.</p>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-number">4</div>
+            <div class="step-content">
+                <h3>Learning Continues</h3>
+                <p>The student returns tomorrow to a companion that remembers yesterday's conversation, their sticking points, and their small victories. Continuity builds trust.</p>
+            </div>
+        </div>
+    </section>
 
-dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
-
-</script></body>
+    <!-- Footer -->
+    <footer class="footer">
+        <p>
+            Almanach — built for classrooms that trust students to learn. 
+            <br>
+            <a href="/app/">Enter the app</a> — 
+            <a href="https://github.com/clawpen/almanach">View on GitHub</a>
+        </p>
+    </footer>
+</body>
 </html>

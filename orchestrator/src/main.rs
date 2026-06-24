@@ -14,6 +14,7 @@ use axum::http::{header, HeaderName, Method};
 use axum::{
     routing::{get, post, delete, patch, put},
     Router,
+    middleware,
 };
 use tokio::sync::RwLock;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -113,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/register", post(api::register))
         .route("/auth/user/register", post(auth::user_register))
         .route("/auth/refresh", post(api::refresh_token))
+        .route("/auth/status", get(auth::auth_status))
         .route("/api/keys", get(api::list_api_keys).post(api::set_api_key))
         .route("/api/keys/:provider", delete(api::delete_api_key))
         .route("/api/providers/:provider/models", get(api::list_provider_models))
@@ -168,6 +170,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/active-roadmap", get(course_api::get_active_roadmap))
         .route("/ws/chat", get(api::chat_websocket))
         .fallback_service(ServeDir::new(static_dir.clone()))
+        .layer(middleware::from_fn_with_state(state.clone(), auth::auth_middleware))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::any())
