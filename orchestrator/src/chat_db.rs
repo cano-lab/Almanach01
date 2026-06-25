@@ -128,6 +128,24 @@ impl ChatDb {
             tracing::info!("Migrated schema v10: added conversations.provider, conversations.model");
         }
 
+        // Migration: add automode_role to conversations if not exists (schema v12)
+        let has_automode_role: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'automode_role'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_automode_role == 0 {
+            conn.execute(
+                "ALTER TABLE conversations ADD COLUMN automode_role TEXT",
+                [],
+            )?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version (version) VALUES (12)",
+                [],
+            )?;
+            tracing::info!("Migrated schema v12: added conversations.automode_role");
+        }
+
         // Migration: add temperature to conversations if not exists (schema v11)
         let has_temperature: i64 = conn.query_row(
             "SELECT COUNT(*) FROM pragma_table_info('conversations') WHERE name = 'temperature'",
@@ -953,6 +971,7 @@ pub struct ChatConversation {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub temperature: Option<f32>,
+    pub automode_role: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     pub message_count: i64,
@@ -1424,6 +1443,27 @@ pub fn add_message(
     }
 
     // ─── Per-Conversation System Prompt ───────────────────────────────────
+
+    pub fn get_conversation_automode_role(&self, conversation_id: &str, user_id: &str) -> Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT automode_role FROM conversations WHERE id = ?1 AND user_id = ?2",
+            params![conversation_id, user_id],
+            |row| {
+                let role: Option<String> = row.get(0)?;
+                Ok(role)
+            },
+        ).optional().context("get_conversation_automode_role")
+    }
+
+    pub fn set_conversation_automode_role(&self, conversation_id: &str, user_id: &str, role: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE conversations SET automode_role = ?1 WHERE id = ?2 AND user_id = ?3",
+            params![role, conversation_id, user_id],
+        ).context("set_conversation_automode_role")?;
+        Ok(())
+    }
 
     pub fn get_conversation_provider_model(&self, conversation_id: &str, user_id: &str) -> Result<Option<(String, String)>> {
         let conn = self.conn.lock().unwrap();

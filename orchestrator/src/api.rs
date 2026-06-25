@@ -1980,3 +1980,124 @@ pub struct WriteFileRequest {
     pub path: String,
     pub content: String,
 }
+
+// ─── Automode ───────────────────────────────────────────────────────────────
+
+use crate::automode::{self, AutomodeConfig, DecisionRecord, RouteRequest};
+use tokio::sync::RwLock;
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateAutomodeConfigRequest {
+    pub enabled: Option<bool>,
+    pub default_role: Option<String>,
+}
+
+pub async fn get_automode_config(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
+) -> Result<Json<AutomodeConfig>, (StatusCode, String)> {
+    let role = claims.role.as_deref().unwrap_or("");
+    if role != "admin" && role != "teacher" {
+        return Err((StatusCode::FORBIDDEN, "Admin/teacher only".to_string()));
+    }
+    let config = state.automode_config.read().await;
+    Ok(Json(config.clone()))
+}
+
+pub async fn update_automode_config(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
+    Json(req): Json<UpdateAutomodeConfigRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let role = claims.role.as_deref().unwrap_or("");
+    if role != "admin" {
+        return Err((StatusCode::FORBIDDEN, "Admin only".to_string()));
+    }
+    
+    let mut config = state.automode_config.write().await;
+    if let Some(enabled) = req.enabled {
+        config.enabled = enabled;
+    }
+    if let Some(default_role) = req.default_role {
+        config.default_role = default_role;
+    }
+    
+    if let Err(e) = automode::save_automode_config(&state.data_dir, &*config) {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+    
+    let router = if config.enabled {
+        Some(automode::AutomodeRouter::new(
+            config.clone(),
+            Arc::new(RwLock::new({
+                let keys = state.api_keys.read().await;
+                keys.clone()
+            })),
+        ))
+    } else {
+        None
+    };
+    
+    let mut router_lock = state.automode_router.write().await;
+    *router_lock = router;
+    
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "enabled": config.enabled,
+        "default_role": config.default_role,
+    })))
+}
+
+pub async fn list_automode_roles(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let role = claims.role.as_deref().unwrap_or("");
+    if role != "admin" && role != "teacher" && role != "student" {
+        return Err((StatusCode::FORBIDDEN, "Invalid role".to_string()));
+    }
+    let config = state.automode_config.read().await;
+    Ok(Json(serde_json::json!({
+        "roles": config.roles.iter().map(|r| serde_json::json!({
+            "id": r.id,
+            "name": r.name,
+            "description": r.description,
+            "requires_vision": r.requires_vision,
+            "required_languages": r.required_languages,
+            "default_sensitivity": r.default_sensitivity,
+            "preferred_strengths": r.preferred_strengths,
+        })).collect::<Vec<_>>(),
+        "enabled": config.enabled,
+        "default_role": config.default_role,
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RouteAutomodeRequest {
+    pub role_id: String,
+    pub payload_summary: String,
+    pub sensitivity: Option<String>,
+    pub grade_level: Option<String>,
+}
+
+pub async fn route_automode(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<crate::auth::Claims>,
+    Json(req): Json<RouteAutomodeRequest>,
+) -> Result<Json<DecisionRecord>, (StatusCode, String)> {
+    let router = state.automode_router.read().await;
+    let router = match router.as_ref() {
+        Some(r) => r,
+        None => return Err((StatusCode::SERVICE_UNAVAILABLE, "Automode not enabled".to_string())),
+    };
+    
+    let route_req = RouteRequest {
+        role_id: req.role_id,
+        payload_summary: req.payload_summary,
+        sensitivity: req.sensitivity,
+        grade_level: req.grade_level,
+    };
+    
+    let decision = router.route(route_req).await;
+    Ok(Json(decision))
+}

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+mod automode;
 mod anthropic_proxy;
 mod api;
 mod auth;
@@ -30,6 +31,8 @@ pub struct AppState {
     pub auth: RwLock<AuthManager>,
     pub chat_db: Arc<ChatDb>,
     pub terminal: terminal_agent::TerminalAgent,
+    pub automode_router: RwLock<Option<automode::AutomodeRouter>>,
+    pub automode_config: RwLock<automode::AutomodeConfig>,
 }
 
 fn load_api_keys(data_dir: &std::path::Path) -> HashMap<String, String> {
@@ -91,13 +94,40 @@ async fn main() -> anyhow::Result<()> {
     let api_keys = load_api_keys(&data_dir);
     let chat_db = Arc::new(ChatDb::open(&data_dir.join("chat.db"))?);
 
+    // Load automode config
+    let automode_config = automode::load_automode_config(&data_dir).unwrap_or_else(|e| {
+        tracing::warn!("Failed to load automode config: {}. Using defaults.", e);
+        automode::AutomodeConfig {
+            enabled: false,
+            router_model: "augure-nano".to_string(),
+            router_provider: "augure".to_string(),
+            models: vec![],
+            roles: vec![],
+            default_role: "explainer".to_string(),
+        }
+    });
+    let automode_router = if automode_config.enabled {
+        tracing::info!("🤖 Automode enabled with router: {}/{}", 
+            automode_config.router_provider, automode_config.router_model);
+        let router = automode::AutomodeRouter::new(
+            automode_config.clone(),
+            Arc::new(RwLock::new(load_api_keys(&data_dir))),
+        );
+        Some(router)
+    } else {
+        tracing::info!("🤖 Automode disabled (manual mode)");
+        None
+    };
+
     let state = Arc::new(AppState {
         config: config.clone(),
-        api_keys: RwLock::new(api_keys),
+        api_keys: RwLock::new(load_api_keys(&data_dir)),
         data_dir: data_dir.clone(),
         auth: RwLock::new(auth_manager),
         chat_db,
         terminal: terminal_agent::TerminalAgent::new(),
+        automode_router: RwLock::new(automode_router),
+        automode_config: RwLock::new(automode_config),
     });
 
     let static_dir = config
@@ -123,6 +153,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/conversations/:id/settings", put(api::set_conversation_settings))
         .route("/api/conversations/:id/messages", get(api::get_messages).post(api::send_message))
         .route("/api/conversations/:id/stream", post(api::stream_conversation))
+        .route("/api/automode/config", get(api::get_automode_config).put(api::update_automode_config))
+        .route("/api/automode/roles", get(api::list_automode_roles))
+        .route("/api/automode/route", post(api::route_automode))
         .route("/api/conversations/:id/compact", post(api::compact_conversation))
         .route("/api/conversations/:id", patch(api::update_conversation))
         .route("/api/conversations/:id/system-prompt", post(api::set_conversation_system_prompt))
@@ -157,7 +190,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/terminal/sessions/:id/exec", post(api::terminal_exec))
         .route("/api/terminal/sessions/:id/read", post(api::terminal_read))
         .route("/api/terminal/sessions/:id/write", post(api::terminal_write))
-        .route("/api/terminal/sessions/:id/ls", post(api::terminal_ls))
+        .route("/api/automode/config", get(api::get_automode_config).put(api::update_automode_config))
+        .route("/api/automode/roles", get(api::list_automode_roles))
+        .route("/api/automode/route", post(api::route_automode))
         .route("/api/roadmaps", get(course_api::list_roadmaps).post(course_api::create_roadmap))
         .route("/api/roadmaps/:id", get(course_api::get_roadmap).delete(course_api::delete_roadmap))
         .route("/api/roadmaps/:id/activate", post(course_api::set_active_roadmap))
