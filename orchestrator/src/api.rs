@@ -134,7 +134,7 @@ pub struct ApiKeyInfo {
 }
 
 pub async fn list_api_keys(State(state): State<Arc<AppState>>) -> Json<Vec<ApiKeyInfo>> {
-    let providers = ["zai", "anthropic", "openai", "kimi", "google", "augure"];
+    let providers = ["zai", "anthropic", "openai", "kimi", "google", "augure", "fugu"];
     let keys = state.api_keys.read().await;
 
     Json(
@@ -149,29 +149,61 @@ pub async fn list_api_keys(State(state): State<Arc<AppState>>) -> Json<Vec<ApiKe
 }
 
 pub async fn set_api_key(
-    _state: State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
     Json(req): Json<SetApiKeyRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        format!(
-            "API keys are now managed via environment variables. Set {}_API_KEY and restart the server.",
-            req.provider.to_uppercase()
-        ),
-    ))
+    let role = claims.role.as_deref().unwrap_or_else(|| if claims.sub == "admin" { "admin" } else { "" });
+    if role != "admin" && role != "teacher" && role != "student" {
+        return Err((StatusCode::FORBIDDEN, "Invalid role".to_string()));
+    }
+
+    if req.key.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Key cannot be empty".to_string()));
+    }
+
+    {
+        let mut keys = state.api_keys.write().await;
+        keys.insert(req.provider.clone(), req.key.clone());
+    }
+
+    let keys_path = state.data_dir.join("api_keys.json");
+    let keys = state.api_keys.read().await;
+    let serializable: HashMap<String, String> = keys.clone();
+    drop(keys);
+
+    if let Err(e) = tokio::fs::write(&keys_path, serde_json::to_string_pretty(&serializable).unwrap_or_default()).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save key: {}", e)));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn delete_api_key(
-    _state: State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
     Path(provider): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        format!(
-            "API keys are now managed via environment variables. Unset {}_API_KEY and restart the server.",
-            provider.to_uppercase()
-        ),
-    ))
+    let role = claims.role.as_deref().unwrap_or_else(|| if claims.sub == "admin" { "admin" } else { "" });
+    if role != "admin" && role != "teacher" && role != "student" {
+        return Err((StatusCode::FORBIDDEN, "Invalid role".to_string()));
+    }
+
+    {
+        let mut keys = state.api_keys.write().await;
+        keys.remove(&provider);
+    }
+
+    let keys_path = state.data_dir.join("api_keys.json");
+    let keys = state.api_keys.read().await;
+    let serializable: HashMap<String, String> = keys.clone();
+    drop(keys);
+
+    if let Err(e) = tokio::fs::write(&keys_path, serde_json::to_string_pretty(&serializable).unwrap_or_default()).await {
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save key: {}", e)));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Return the LLM API endpoint URL for a given provider.
