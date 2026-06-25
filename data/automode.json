@@ -121,7 +121,7 @@
       "temperature": 0.4,
       "default_sensitivity": "high",
       "preferred_strengths": ["franco-ontarian", "concrete-description"],
-      "recommended_models": [],
+      "recommended_models": ["kimi-k2.7"],
       "fallback_policy": "escalate_to_teacher"
     },
     {
