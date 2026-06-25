@@ -698,6 +698,8 @@ pub struct SendMessageRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub provider: Option<String>,
+    #[serde(default)]
+    pub automode_role: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -838,10 +840,21 @@ pub async fn send_message(
     }));
 
     // Determine provider and model
-    let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
-    let model = req
-        .model
-        .unwrap_or_else(|| "kimi-k2.6".to_string());
+    let (provider, model) = {
+        let (auto_provider, auto_model, method, reason) = resolve_automode_model(
+            &state, &id, &claims.sub, &req.content, req.automode_role.as_deref()
+        ).await?;
+        if method != "manual" {
+            tracing::info!("Automode routed to {}/{} via {}: {}", auto_provider, auto_model, method, reason);
+            // Persist to conversation
+            let _ = state.chat_db.set_conversation_provider_model(&id, &claims.sub, &auto_provider, &auto_model);
+            (auto_provider, auto_model)
+        } else {
+            let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
+            let model = req.model.unwrap_or_else(|| "kimi-k2.6".to_string());
+            (provider, model)
+        }
+    };
 
     // Get API key
     let api_key = state
@@ -972,17 +985,27 @@ pub async fn stream_conversation(
         serde_json::json!({ "role": m.role, "content": m.content })
     }));
 
-    // Determine provider and model: request overrides > stored > defaults
-    let (provider, model) = if req.provider.is_some() || req.model.is_some() {
-        let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
-        let model = req.model.unwrap_or_else(|| "kimi-k2.7".to_string());
-        // Persist to conversation
-        let _ = state.chat_db.set_conversation_provider_model(&id, &claims.sub, &provider, &model);
-        (provider, model)
-    } else {
-        match state.chat_db.get_conversation_provider_model(&id, &claims.sub).ok().flatten() {
-            Some((p, m)) => (p, m),
-            None => ("kimi".to_string(), "kimi-k2.7".to_string()),
+    // Determine provider and model: automode > request overrides > stored > defaults
+    let (provider, model) = {
+        let (auto_provider, auto_model, method, reason) = resolve_automode_model(
+            &state, &id, &claims.sub, &req.content, req.automode_role.as_deref()
+        ).await?;
+        if method != "manual" {
+            tracing::info!("Automode routed to {}/{} via {}: {}", auto_provider, auto_model, method, reason);
+            // Persist to conversation
+            let _ = state.chat_db.set_conversation_provider_model(&id, &claims.sub, &auto_provider, &auto_model);
+            (auto_provider, auto_model)
+        } else if req.provider.is_some() || req.model.is_some() {
+            let provider = req.provider.unwrap_or_else(|| "kimi".to_string());
+            let model = req.model.unwrap_or_else(|| "kimi-k2.7".to_string());
+            // Persist to conversation
+            let _ = state.chat_db.set_conversation_provider_model(&id, &claims.sub, &provider, &model);
+            (provider, model)
+        } else {
+            match state.chat_db.get_conversation_provider_model(&id, &claims.sub).ok().flatten() {
+                Some((p, m)) => (p, m),
+                None => ("kimi".to_string(), "kimi-k2.7".to_string()),
+            }
         }
     };
 
@@ -1180,6 +1203,8 @@ pub struct ChatStreamRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub provider: Option<String>,
+    #[serde(default)]
+    pub automode_role: Option<String>,
 }
 
 pub async fn chat_stream(
@@ -1445,7 +1470,7 @@ pub async fn list_users(
     Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
 
-    if claims.role.as_deref() != Some("admin") && claims.role.as_deref() != Some("teacher") {
+    if claims.role.as_deref() != Some("admin") && claims.role.as_deref() != Some("teacher") && claims.sub != "admin" {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
 
@@ -1477,7 +1502,7 @@ pub async fn approve_user(
     Json(req): Json<ApproveUserRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
 
-    if claims.role.as_deref() != Some("admin") && claims.role.as_deref() != Some("teacher") {
+    if claims.role.as_deref() != Some("admin") && claims.role.as_deref() != Some("teacher") && claims.sub != "admin" {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
 
@@ -1498,7 +1523,7 @@ pub async fn delete_user(
     Path(id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
 
-    if claims.role.as_deref() != Some("admin") {
+    if claims.role.as_deref() != Some("admin") && claims.sub != "admin" {
         return Err((StatusCode::FORBIDDEN, "Admin access required".to_string()));
     }
 
@@ -1996,7 +2021,7 @@ pub async fn get_automode_config(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<AutomodeConfig>, (StatusCode, String)> {
-    let role = claims.role.as_deref().unwrap_or("");
+    let role = claims.role.as_deref().unwrap_or_else(|| if claims.sub == "admin" { "admin" } else { "" });
     if role != "admin" && role != "teacher" {
         return Err((StatusCode::FORBIDDEN, "Admin/teacher only".to_string()));
     }
@@ -2009,7 +2034,7 @@ pub async fn update_automode_config(
     Extension(claims): Extension<crate::auth::Claims>,
     Json(req): Json<UpdateAutomodeConfigRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let role = claims.role.as_deref().unwrap_or("");
+    let role = claims.role.as_deref().unwrap_or_else(|| if claims.sub == "admin" { "admin" } else { "" });
     if role != "admin" {
         return Err((StatusCode::FORBIDDEN, "Admin only".to_string()));
     }
@@ -2052,7 +2077,7 @@ pub async fn list_automode_roles(
     State(state): State<Arc<AppState>>,
     Extension(claims): Extension<crate::auth::Claims>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let role = claims.role.as_deref().unwrap_or("");
+    let role = claims.role.as_deref().unwrap_or_else(|| if claims.sub == "admin" { "admin" } else { "" });
     if role != "admin" && role != "teacher" && role != "student" {
         return Err((StatusCode::FORBIDDEN, "Invalid role".to_string()));
     }
@@ -2100,4 +2125,104 @@ pub async fn route_automode(
     
     let decision = router.route(route_req).await;
     Ok(Json(decision))
+}
+
+/// Helper: if automode is enabled, route the request to select the best model.
+/// Returns (provider, model, method, reason) — method is "manual" if automode is off.
+async fn resolve_automode_model(
+    state: &Arc<AppState>,
+    conversation_id: &str,
+    user_id: &str,
+    content: &str,
+    requested_role: Option<&str>,
+) -> Result<(String, String, String, String), (StatusCode, String)> {
+    let config = state.automode_config.read().await;
+    if !config.enabled {
+        return Ok(("".to_string(), "".to_string(), "manual".to_string(), "Automode disabled".to_string()));
+    }
+    
+    // Get the role: requested > conversation stored > default
+    let role_id = if let Some(role) = requested_role {
+        role.to_string()
+    } else if let Ok(Some(stored)) = state.chat_db.get_conversation_automode_role(conversation_id, user_id) {
+        stored
+    } else {
+        config.default_role.clone()
+    };
+    
+    // If requested role differs from stored, update it
+    if requested_role.is_some() {
+        let _ = state.chat_db.set_conversation_automode_role(conversation_id, user_id, &role_id);
+    }
+    
+    let router = state.automode_router.read().await;
+    let router = match router.as_ref() {
+        Some(r) => r,
+        None => return Ok(("".to_string(), "".to_string(), "manual".to_string(), "Router not initialized".to_string())),
+    };
+    
+    let route_req = RouteRequest {
+        role_id: role_id.clone(),
+        payload_summary: content.to_string(),
+        sensitivity: None,
+        grade_level: None,
+    };
+    
+    let decision = router.route(route_req).await;
+    
+    if let Some(model) = decision.chosen_model {
+        let provider = decision.chosen_orchestrator.unwrap_or_else(|| "kimi".to_string());
+        return Ok((provider, model, decision.method, decision.reason));
+    }
+    
+    // Escalation or no model found — fall back to manual
+    Ok(("kimi".to_string(), "kimi-k2.7".to_string(), "escalation".to_string(), decision.reason))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetAutomodeRoleRequest {
+    pub role_id: String,
+}
+
+pub async fn set_conversation_automode_role(
+    State(state): State<Arc<AppState>>,
+    Extension(claims): Extension<crate::auth::Claims>,
+    Path(id): Path<String>,
+    Json(req): Json<SetAutomodeRoleRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let role = claims.role.as_deref().unwrap_or_else(|| if claims.sub == "admin" { "admin" } else { "" });
+    let user_role = crate::chat_db::UserRole::parse(role);
+    state
+        .chat_db
+        .get_or_create_user_from_claims(&claims.sub, None, user_role)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    state
+        .chat_db
+        .set_conversation_automode_role(&id, &claims.sub, &req.role_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "automode_role": req.role_id,
+    })))
+}
+
+pub async fn get_automode_status(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let config = state.automode_config.read().await;
+    Json(serde_json::json!({
+        "enabled": config.enabled,
+        "default_role": config.default_role,
+        "roles": config.roles.iter().map(|r| serde_json::json!({
+            "id": r.id,
+            "name": r.name,
+            "description": r.description,
+            "requires_vision": r.requires_vision,
+            "required_languages": r.required_languages,
+            "default_sensitivity": r.default_sensitivity,
+            "preferred_strengths": r.preferred_strengths,
+        })).collect::<Vec<_>>(),
+    }))
 }
