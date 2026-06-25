@@ -1063,7 +1063,7 @@ impl ChatDb {
     pub fn list_conversations(&self, user_id: &str) -> Result<Vec<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, automode_role, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1
@@ -1079,9 +1079,10 @@ impl ChatDb {
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
                     temperature: row.get(6).ok(),
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8).unwrap_or_default(),
-                    message_count: row.get(9)?,
+                    automode_role: row.get(7).ok(),
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9).unwrap_or_default(),
+                    message_count: row.get(10)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1112,6 +1113,7 @@ impl ChatDb {
             provider: provider.map(|s| s.to_string()),
             model: model.map(|s| s.to_string()),
             temperature,
+            automode_role: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             message_count: 0,
@@ -1121,7 +1123,7 @@ impl ChatDb {
     pub fn get_conversation(&self, id: &str, user_id: &str) -> Result<ChatConversation> {
         let conn = self.conn.lock().unwrap();
         let row = conn.query_row(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, automode_role, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE id = ?1 AND user_id = ?2",
@@ -1135,9 +1137,10 @@ impl ChatDb {
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
                     temperature: row.get(6).ok(),
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8).unwrap_or_default(),
-                    message_count: row.get(9)?,
+                    automode_role: row.get(7).ok(),
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9).unwrap_or_default(),
+                    message_count: row.get(10)?,
                 })
             },
         )?;
@@ -1373,7 +1376,7 @@ pub fn add_message(
     pub fn admin_list_user_conversations(&self, target_user_id: &str) -> Result<Vec<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, automode_role, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1
@@ -1389,9 +1392,10 @@ pub fn add_message(
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
                     temperature: row.get(6).ok(),
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8).unwrap_or_default(),
-                    message_count: row.get(9)?,
+                    automode_role: row.get(7).ok(),
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9).unwrap_or_default(),
+                    message_count: row.get(10)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1446,14 +1450,15 @@ pub fn add_message(
 
     pub fn get_conversation_automode_role(&self, conversation_id: &str, user_id: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row(
+        let role: Option<Option<String>> = conn.query_row(
             "SELECT automode_role FROM conversations WHERE id = ?1 AND user_id = ?2",
             params![conversation_id, user_id],
             |row| {
                 let role: Option<String> = row.get(0)?;
                 Ok(role)
             },
-        ).optional().context("get_conversation_automode_role")
+        ).optional().context("get_conversation_automode_role")?;
+        Ok(role.flatten())
     }
 
     pub fn set_conversation_automode_role(&self, conversation_id: &str, user_id: &str, role: &str) -> Result<()> {
@@ -1762,6 +1767,7 @@ pub fn add_message(
             provider: None,
             model: None,
             temperature: None,
+            automode_role: None,
             created_at: chrono::Utc::now().to_rfc3339(),
             updated_at: chrono::Utc::now().to_rfc3339(),
             message_count: 0,
@@ -1771,7 +1777,7 @@ pub fn add_message(
     pub fn get_conversation_by_lesson(&self, user_id: &str, lesson_id: &str) -> Result<Option<ChatConversation>> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, created_at, last_message_at,
+            "SELECT id, COALESCE(title, 'New Chat'), system_prompt, COALESCE(color, '#2a7f7f'), provider, model, temperature, automode_role, created_at, last_message_at,
                     (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as msg_count
              FROM conversations c
              WHERE user_id = ?1 AND lesson_id = ?2
@@ -1786,9 +1792,10 @@ pub fn add_message(
                     provider: row.get(4).ok(),
                     model: row.get(5).ok(),
                     temperature: row.get(6).ok(),
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8).unwrap_or_default(),
-                    message_count: row.get(9)?,
+                    automode_role: row.get(7).ok(),
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9).unwrap_or_default(),
+                    message_count: row.get(10)?,
                 })
             },
         ).optional().context("get_conversation_by_lesson")

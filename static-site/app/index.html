@@ -364,11 +364,16 @@
     </div>
 
     <div class="modal-overlay hidden" id="settingsModal">
-      <div class="modal" style="width:420px;max-width:90vw;max-height:80vh;display:flex;flex-direction:column;">
-        <h2>Settings</h2>
-        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">API keys are configured on the server with environment variables and are never returned to the UI.</p>
+      <div class="modal" style="width:640px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h2 style="margin:0;">Settings</h2>
+          <button style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-tertiary);" onclick="document.getElementById('settingsModal').classList.add('hidden')">×</button>
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:var(--line-weight) solid var(--border);padding-bottom:8px;">
+          <button id="settingsTabApiKeys" class="settings-tab active" onclick="switchSettingsTab('apiKeys')" style="padding:6px 12px;border-radius:var(--radius);border:none;background:var(--accent-surface);font-size:13px;cursor:pointer;">API Keys</button>
+          <button id="settingsTabModels" class="settings-tab" onclick="switchSettingsTab('models')" style="padding:6px 12px;border-radius:var(--radius);border:none;background:transparent;font-size:13px;cursor:pointer;color:var(--text-secondary);">Models</button>
+        </div>
         <div id="settingsContent" style="overflow-y:auto;flex:1;"></div>
-        <button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);border-color:var(--border);margin-top:16px;flex-shrink:0;" onclick="document.getElementById('settingsModal').classList.add('hidden')">Close</button>
       </div>
     </div>
 
@@ -474,7 +479,120 @@ function getSelectedModel() {
 
 function showSettingsModal() {
   document.getElementById('settingsModal').classList.remove('hidden');
-  loadApiKeys();
+  switchSettingsTab('apiKeys');
+}
+
+function switchSettingsTab(tab) {
+  document.querySelectorAll('.settings-tab').forEach(el => {
+    el.classList.remove('active');
+    el.style.background = 'transparent';
+    el.style.color = 'var(--text-secondary)';
+  });
+  const activeBtn = document.getElementById('settingsTab' + (tab === 'apiKeys' ? 'ApiKeys' : 'Models'));
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+    activeBtn.style.background = 'var(--accent-surface)';
+    activeBtn.style.color = 'var(--text-primary)';
+  }
+  
+  if (tab === 'apiKeys') loadApiKeys();
+  else if (tab === 'models') loadModelCards();
+}
+
+async function loadModelCards() {
+  const container = document.getElementById('settingsContent');
+  container.innerHTML = '<p>Loading model cards...</p>';
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/automode/models`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) { if (res.status === 401) doLogout(); return; }
+    const data = await res.json();
+    
+    const modelMap = {};
+    (data.models || []).forEach(m => { modelMap[m.id] = m; });
+    
+    let html = '<div style="display:flex;flex-direction:column;gap:16px;">';
+    
+    // Section: Automode status
+    html += `
+      <div style="border:var(--line-weight) solid var(--border);padding:12px 16px;border-radius:var(--radius);background:white;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div style="font-size:14px;font-weight:600;">Automode</div>
+          <div style="font-size:12px;color:${data.automode_enabled ? 'var(--accent-teal)' : 'var(--text-tertiary)'};font-weight:700;">
+            ${data.automode_enabled ? 'ON' : 'OFF'}
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
+          When ON, the AI automatically picks the best model for each task.
+        </div>
+      </div>
+    `;
+    
+    // Section: Models
+    html += '<div style="font-size:15px;font-weight:700;margin-bottom:4px;">Available Models</div>';
+    (data.models || []).forEach(m => {
+      const costColor = m.cost_tier === 'low' ? 'var(--accent-teal)' : m.cost_tier === 'high' ? 'var(--accent-rust)' : 'var(--text-secondary)';
+      const latencyIcon = m.latency_tier === 'fast' ? '⚡' : m.latency_tier === 'slow' ? '🐢' : '⏱️';
+      html += `
+        <div style="border:var(--line-weight) solid var(--border);padding:16px;border-radius:var(--radius);background:white;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:15px;font-weight:700;">${m.friendly_name}</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span style="font-size:11px;padding:2px 8px;border-radius:var(--radius);background:${costColor}20;color:${costColor};border:var(--line-weight) solid ${costColor};">
+                ${latencyIcon} ${m.latency_tier}
+              </span>
+              <span style="font-size:11px;padding:2px 8px;border-radius:var(--radius);background:var(--accent-surface);color:var(--text-secondary);border:var(--line-weight) solid var(--border);">
+                ${m.provider}
+              </span>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;line-height:1.5;">
+            ${m.description}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--text-tertiary);">
+            <span style="background:var(--bg-secondary);padding:3px 8px;border-radius:var(--radius);">📄 ${m.context_window.toLocaleString()} tokens</span>
+            <span style="background:var(--bg-secondary);padding:3px 8px;border-radius:var(--radius);">📝 ${m.max_output_tokens.toLocaleString()} max out</span>
+            <span style="background:var(--bg-secondary);padding:3px 8px;border-radius:var(--radius);">🌐 ${m.languages.join(', ')}</span>
+            ${m.vision ? '<span style="background:var(--bg-secondary);padding:3px 8px;border-radius:var(--radius);">👁️ Vision</span>' : ''}
+            ${m.tool_use ? '<span style="background:var(--bg-secondary);padding:3px 8px;border-radius:var(--radius);">🔧 Tools</span>' : ''}
+          </div>
+        </div>
+      `;
+    });
+    
+    // Section: Roles
+    html += '<div style="font-size:15px;font-weight:700;margin-top:8px;margin-bottom:4px;">AI Roles</div>';
+    (data.roles || []).forEach(r => {
+      const recModels = r.recommended_models.map(id => {
+        const m = modelMap[id];
+        return m ? `<span style="font-size:11px;padding:2px 6px;border-radius:var(--radius);background:${m.cost_tier === 'high' ? 'var(--accent-rust)' : 'var(--accent-teal)'}20;color:${m.cost_tier === 'high' ? 'var(--accent-rust)' : 'var(--accent-teal)'};border:var(--line-weight) solid ${m.cost_tier === 'high' ? 'var(--accent-rust)' : 'var(--accent-teal)'};margin-right:4px;">${m.friendly_name}</span>` : '';
+      }).join('');
+      
+      html += `
+        <div style="border:var(--line-weight) solid var(--border);padding:14px;border-radius:var(--radius);background:white;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <div style="font-size:14px;font-weight:700;">${r.name}</div>
+            <div style="font-size:11px;color:var(--text-tertiary);">🌡️ ${r.temperature}</div>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;line-height:1.5;">${r.description}</div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:6px;">
+            💡 Uses: ${recModels || '<span style="color:var(--accent-rust)">No models configured</span>'}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;">
+            ${r.preferred_strengths.map(s => `<span style="font-size:10px;padding:2px 6px;border-radius:var(--radius);background:var(--bg-secondary);color:var(--text-tertiary);">${s}</span>`).join('')}
+          </div>
+        </div>
+      `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (e) {
+    console.error('loadModelCards error:', e);
+    container.innerHTML = '<p class="error">Failed to load model cards: ' + (e.message || e) + '</p>';
+  }
 }
 
 async function loadApiKeys() {

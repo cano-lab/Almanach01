@@ -9,6 +9,8 @@ use tracing;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelManifest {
     pub id: String,
+    pub friendly_name: String,  // e.g. "Kimi K2.7"
+    pub description: String,    // e.g. "Strong coding and long-context model from China"
     pub provider: String,       // "kimi", "augure", "fugu", "lm_studio"
     pub model_string: String,   // the API identifier
     pub endpoint: String,       // "cloud" | "local"
@@ -38,6 +40,7 @@ pub struct RoleManifest {
     pub temperature: f32,
     pub default_sensitivity: String, // "low" | "high"
     pub preferred_strengths: Vec<String>,
+    pub recommended_models: Vec<String>, // explicit role -> model mapping (ids)
     pub fallback_policy: String, // "relax_soft" | "escalate_to_teacher"
 }
 

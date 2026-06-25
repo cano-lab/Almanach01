@@ -2097,6 +2097,49 @@ pub async fn list_automode_roles(
     })))
 }
 
+/// Student-facing model cards: all authenticated users can see model specs
+pub async fn list_model_cards(
+    State(state): State<Arc<AppState>>,
+    Extension(_claims): Extension<crate::auth::Claims>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = state.automode_config.read().await;
+    
+    let models = config.models.iter().filter(|m| m.enabled).map(|m| serde_json::json!({
+        "id": m.id,
+        "friendly_name": m.friendly_name,
+        "description": m.description,
+        "provider": m.provider,
+        "model_string": m.model_string,
+        "context_window": m.context_window,
+        "max_output_tokens": m.max_output_tokens,
+        "vision": m.vision,
+        "languages": m.languages,
+        "tool_use": m.tool_use,
+        "cost_tier": m.cost_tier,
+        "latency_tier": m.latency_tier,
+        "strengths": m.strengths,
+        "is_orchestrator": m.is_orchestrator,
+        "orchestrator_type": m.orchestrator_type,
+    })).collect::<Vec<_>>();
+    
+    let roles = config.roles.iter().map(|r| serde_json::json!({
+        "id": r.id,
+        "name": r.name,
+        "description": r.description,
+        "temperature": r.temperature,
+        "default_sensitivity": r.default_sensitivity,
+        "recommended_models": r.recommended_models,
+        "preferred_strengths": r.preferred_strengths,
+    })).collect::<Vec<_>>();
+    
+    Ok(Json(serde_json::json!({
+        "automode_enabled": config.enabled,
+        "default_role": config.default_role,
+        "models": models,
+        "roles": roles,
+    })))
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RouteAutomodeRequest {
     pub role_id: String,

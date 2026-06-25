@@ -285,6 +285,11 @@
                     </select>
                     <label for="modelSelect">Model</label>
                     <select id="modelSelect" style="min-width: 140px;"></select>
+                    <div id="automodeRoleContainer" class="hidden" style="display:flex;align-items:center;gap:8px;">
+                        <label for="automodeRoleSelect">Role</label>
+                        <select id="automodeRoleSelect" style="min-width: 140px;" onchange="onAutomodeRoleChange()"></select>
+                        <span id="automodeBadge" style="font-size:11px;padding:2px 8px;background:var(--accent-teal);color:white;border-radius:var(--radius);display:none;">Auto</span>
+                    </div>
                 </div>
                 <div style="display:flex;gap:12px;">
                     <textarea class="message-input" id="messageInput" rows="1" placeholder="Type a message... (use ```python for code)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage();}"></textarea>
@@ -338,6 +343,7 @@
             <span class="admin-tab" id="adminTabChats" onclick="switchAdminTab('chats')">User Chats</span>
             <span class="admin-tab" id="adminTabUserPrompts" onclick="switchAdminTab('userPrompts')">User Prompts</span>
             <span class="admin-tab" id="adminTabPrompts" onclick="switchAdminTab('prompts')">System Prompts</span>
+            <span class="admin-tab" id="adminTabAutomode" onclick="switchAdminTab('automode')">Automode</span>
             <span class="admin-tab" id="adminTabRoadmaps" onclick="switchAdminTab('roadmaps')">Roadmaps</span>
             <span class="admin-tab" id="adminTabCourses" onclick="switchAdminTab('courses')">Course Catalog</span>
             <span class="admin-tab" id="adminTabMetrics" onclick="switchAdminTab('metrics')">Metrics</span>
@@ -356,6 +362,7 @@
         </div>
         <div class="admin-content hidden" id="adminUserPrompts"></div>
         <div class="admin-content hidden" id="adminPrompts"></div>
+        <div class="admin-content hidden" id="adminAutomode"></div>
         <div class="admin-content hidden" id="adminRoadmaps"></div>
         <div class="admin-content hidden" id="adminCourses"></div>
         <div class="admin-content hidden" id="adminMetrics"></div>
@@ -814,7 +821,7 @@ document.addEventListener('click', function(e) {
 
 // ─── Auth ───
 if (!token) { document.getElementById('loginModal').classList.remove('hidden'); }
-else { fetchUser(); loadConversations(); initModelSelector(); }
+else { fetchUser(); loadConversations(); initModelSelector(); loadAutomodeStatus(); }
 
 // Restore font mode
 const savedFontMode = localStorage.getItem('fontMode') || 'default';
@@ -835,7 +842,7 @@ async function doLogin() {
             res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: p }) });
         }
         const data = await res.json();
-        if (res.ok) { token = data.access_token; localStorage.setItem('token', token); document.getElementById('loginModal').classList.add('hidden'); fetchUser(); loadConversations(); initModelSelector(); }
+        if (res.ok) { token = data.access_token; localStorage.setItem('token', token); document.getElementById('loginModal').classList.add('hidden'); fetchUser(); loadConversations(); initModelSelector(); loadAutomodeStatus(); }
         else { document.getElementById('loginError').textContent = data.error || 'Login failed'; }
     } catch (e) { document.getElementById('loginError').textContent = 'Connection failed'; }
 }
@@ -1469,6 +1476,8 @@ async function sendMessage() {
         }
 
         const streamBody = { content };
+        const autoRole = getAutomodeRole();
+        if (autoRole) streamBody.automode_role = autoRole;
         if (providerChanged || modelChanged) {
             streamBody.model = model;
             streamBody.provider = provider;
@@ -1583,8 +1592,8 @@ function showAdminDashboard() { document.getElementById('adminDashboardModal').c
 function closeAdminDashboard() { document.getElementById('adminDashboardModal').classList.add('hidden'); }
 function switchAdminTab(tab) {
     currentAdminTab = tab;
-    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', roadmaps: 'adminRoadmaps', courses: 'adminCourses', metrics: 'adminMetrics' };
-    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'roadmaps', 'courses', 'metrics'];
+    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', automode: 'adminAutomode', roadmaps: 'adminRoadmaps', courses: 'adminCourses', metrics: 'adminMetrics' };
+    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'automode', 'roadmaps', 'courses', 'metrics'];
     tabIds.forEach(t => {
         const btn = document.getElementById('adminTab' + t.charAt(0).toUpperCase() + t.slice(1));
         const content = document.getElementById(tabMap[t]);
@@ -1599,6 +1608,7 @@ function switchAdminTab(tab) {
     if (tab === 'chats') loadAdminUserChats();
     if (tab === 'userPrompts') loadAdminUserPrompts();
     if (tab === 'prompts') loadAdminSystemPrompts();
+    if (tab === 'automode') loadAdminAutomode();
     if (tab === 'roadmaps') loadRoadmaps();
     if (tab === 'courses') loadCourses();
     if (tab === 'metrics') loadMetrics();
@@ -1930,6 +1940,135 @@ async function activateSystemPrompt(id) {
 async function deleteSystemPrompt(id) {
     if (!confirm('Delete this system prompt?')) return;
     try { await fetch(`${API_BASE}/api/admin/system-prompts/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); loadAdminSystemPrompts(); } catch (e) {}
+}
+
+// === Automode Admin ===
+
+async function loadAdminAutomode() {
+    const container = document.getElementById('adminAutomode');
+    try {
+        const res = await fetch(`${API_BASE}/api/automode/config`, { headers: { 'Authorization': `Bearer ${token}` } });
+        if (!res.ok) throw new Error('Failed to load automode config');
+        const config = await res.json();
+        const roles = config.roles || [];
+        let html = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 style="font-size:16px;">Automode Configuration</h3>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label style="font-size:13px;font-weight:600;">Enabled</label>
+                    <input type="checkbox" id="automodeEnabledToggle" ${config.enabled ? 'checked' : ''} onchange="toggleAutomodeEnabled()">
+                </div>
+            </div>
+            <div style="border:var(--line-weight) solid var(--border);padding:16px;border-radius:var(--radius);margin-bottom:16px;background:white;">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Default Role</label>
+                    <select id="automodeDefaultRole" onchange="saveAutomodeConfig()" style="width:100%;padding:8px 10px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:14px;">
+                        ${roles.map(r => `<option value="${r.id}" ${r.id === config.default_role ? 'selected' : ''}>${escapeHtml(r.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label style="font-size:13px;font-weight:600;margin-bottom:6px;display:block;">Models</label>
+                    <div id="automodeModelsList" style="display:flex;flex-wrap:wrap;gap:8px;">
+                        ${(config.models || []).map(m => `
+                            <span style="padding:4px 12px;border:var(--line-weight) solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--bg-secondary);">${escapeHtml(m.id)} (${escapeHtml(m.provider)})</span>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+            <h4 style="font-size:14px;margin-bottom:12px;">Roles</h4>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                ${roles.map(r => `
+                    <div style="border:var(--line-weight) solid var(--border);padding:12px;border-radius:var(--radius);background:white;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;">
+                            <strong>${escapeHtml(r.name)}</strong>
+                            <span style="font-size:12px;padding:2px 8px;background:var(--bg-secondary);border-radius:var(--radius);color:var(--text-secondary);">${r.id}</span>
+                        </div>
+                        <p style="font-size:13px;color:var(--text-secondary);margin-top:4px;">${escapeHtml(r.description || '')}</p>
+                        <div style="font-size:12px;color:var(--text-tertiary);margin-top:4px;">
+                            ${r.requires_vision ? '👁 Vision' : ''}
+                            ${r.required_languages?.length ? '🌐 ' + r.required_languages.join(', ') : ''}
+                            ${r.preferred_strengths?.length ? '⚡ ' + r.preferred_strengths.join(', ') : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        container.innerHTML = html;
+    } catch (e) { container.innerHTML = '<p class="error">Failed to load automode config</p>'; }
+}
+
+async function toggleAutomodeEnabled() {
+    const enabled = document.getElementById('automodeEnabledToggle').checked;
+    try {
+        await fetch(`${API_BASE}/api/automode/config`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        loadAutomodeStatus();
+    } catch (e) { alert('Failed to update automode'); }
+}
+
+async function saveAutomodeConfig() {
+    const defaultRole = document.getElementById('automodeDefaultRole').value;
+    try {
+        await fetch(`${API_BASE}/api/automode/config`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ default_role: defaultRole })
+        });
+    } catch (e) { alert('Failed to save automode config'); }
+}
+
+// === Automode Chat UI ===
+
+let automodeStatus = { enabled: false, default_role: 'explainer', roles: [] };
+
+async function loadAutomodeStatus() {
+    try {
+        const res = await fetch(`${API_BASE}/api/automode/status`);
+        if (res.ok) {
+            automodeStatus = await res.json();
+            const roleContainer = document.getElementById('automodeRoleContainer');
+            const badge = document.getElementById('automodeBadge');
+            const roleSelect = document.getElementById('automodeRoleSelect');
+            if (automodeStatus.enabled) {
+                roleContainer.classList.remove('hidden');
+                badge.style.display = 'inline';
+                // Populate roles
+                const roles = automodeStatus.roles || [];
+                const currentRole = roleSelect.value || automodeStatus.default_role;
+                roleSelect.innerHTML = roles.map(r => 
+                    `<option value="${r.id}">${escapeHtml(r.name)}</option>`
+                ).join('');
+                if (roles.find(r => r.id === currentRole)) {
+                    roleSelect.value = currentRole;
+                } else if (roles.length) {
+                    roleSelect.value = roles[0].id;
+                }
+            } else {
+                roleContainer.classList.add('hidden');
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) { console.log('Automode status not available'); }
+}
+
+function onAutomodeRoleChange() {
+    const role = document.getElementById('automodeRoleSelect').value;
+    if (currentConversation) {
+        fetch(`${API_BASE}/api/conversations/${currentConversation}/automode-role`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ role_id: role })
+        }).catch(() => {});
+    }
+}
+
+function getAutomodeRole() {
+    if (!automodeStatus.enabled) return null;
+    const roleSelect = document.getElementById('automodeRoleSelect');
+    return roleSelect ? roleSelect.value : automodeStatus.default_role;
 }
 
 async function loadRoadmaps() {

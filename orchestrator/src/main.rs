@@ -155,6 +155,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/conversations/:id/stream", post(api::stream_conversation))
         .route("/api/automode/config", get(api::get_automode_config).put(api::update_automode_config))
         .route("/api/automode/roles", get(api::list_automode_roles))
+        .route("/api/automode/models", get(api::list_model_cards))
         .route("/api/automode/route", post(api::route_automode))
         .route("/api/conversations/:id/compact", post(api::compact_conversation))
         .route("/api/conversations/:id", patch(api::update_conversation))

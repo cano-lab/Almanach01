@@ -5,6 +5,8 @@
   "models": [
     {
       "id": "kimi-k2.7",
+      "friendly_name": "Kimi K2.7",
+      "description": "Coding specialist and long-context reader. Best for Python, math exploration, and analyzing large documents.",
       "provider": "kimi",
       "model_string": "kimi-k2.7",
       "endpoint": "cloud",
@@ -23,6 +25,8 @@
     },
     {
       "id": "augure-ossington-4",
+      "friendly_name": "Augure Ossington-4",
+      "description": "Fast, franco-ontarian model. Ideal for everyday explanations, French conversation, and quick answers.",
       "provider": "augure",
       "model_string": "ossington-4",
       "endpoint": "cloud",
@@ -41,6 +45,8 @@
     },
     {
       "id": "augure-rosedale-1",
+      "friendly_name": "Augure Rosedale-1",
+      "description": "Deep reasoning model for complex problems. Takes longer but thinks through multi-step math carefully.",
       "provider": "augure",
       "model_string": "rosedale-1",
       "endpoint": "cloud",
@@ -59,6 +65,8 @@
     },
     {
       "id": "fugu",
+      "friendly_name": "Fugu (Frontier)",
+      "description": "Experimental frontier model. Reserved for hard problems that other models struggle with.",
       "provider": "fugu",
       "model_string": "fugu",
       "endpoint": "cloud",
@@ -87,6 +95,7 @@
       "temperature": 0.7,
       "default_sensitivity": "low",
       "preferred_strengths": ["franco-ontarian", "gentle-explainer", "concise"],
+      "recommended_models": ["augure-ossington-4", "augure-rosedale-1"],
       "fallback_policy": "escalate_to_teacher"
     },
     {
@@ -99,6 +108,7 @@
       "temperature": 0.3,
       "default_sensitivity": "low",
       "preferred_strengths": ["franco-ontarian", "bilingual"],
+      "recommended_models": ["augure-ossington-4"],
       "fallback_policy": "escalate_to_teacher"
     },
     {
@@ -111,6 +121,7 @@
       "temperature": 0.4,
       "default_sensitivity": "high",
       "preferred_strengths": ["franco-ontarian", "concrete-description"],
+      "recommended_models": [],
       "fallback_policy": "escalate_to_teacher"
     },
     {
@@ -123,6 +134,7 @@
       "temperature": 0.5,
       "default_sensitivity": "low",
       "preferred_strengths": ["franco-ontarian", "concise", "analytical"],
+      "recommended_models": ["augure-rosedale-1", "augure-ossington-4"],
       "fallback_policy": "escalate_to_teacher"
     },
     {
@@ -135,6 +147,7 @@
       "temperature": 0.6,
       "default_sensitivity": "high",
       "preferred_strengths": ["franco-ontarian", "gentle-explainer", "encouraging"],
+      "recommended_models": ["augure-ossington-4"],
       "fallback_policy": "escalate_to_teacher"
     },
     {
@@ -147,6 +160,7 @@
       "temperature": 0.3,
       "default_sensitivity": "low",
       "preferred_strengths": ["franco-ontarian", "analytical", "concise"],
+      "recommended_models": ["augure-rosedale-1", "kimi-k2.7"],
       "fallback_policy": "escalate_to_teacher"
     },
     {
@@ -159,6 +173,7 @@
       "temperature": 0.5,
       "default_sensitivity": "low",
       "preferred_strengths": ["franco-ontarian", "socratic", "patient"],
+      "recommended_models": ["augure-rosedale-1", "augure-ossington-4"],
       "fallback_policy": "escalate_to_teacher"
     }
   ],
