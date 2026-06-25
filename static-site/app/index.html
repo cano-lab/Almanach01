@@ -341,6 +341,7 @@
             <span class="admin-tab" id="adminTabRoadmaps" onclick="switchAdminTab('roadmaps')">Roadmaps</span>
             <span class="admin-tab" id="adminTabCourses" onclick="switchAdminTab('courses')">Course Catalog</span>
             <span class="admin-tab" id="adminTabMetrics" onclick="switchAdminTab('metrics')">Metrics</span>
+            <span class="admin-tab" id="adminTabAutomode" onclick="switchAdminTab('automode')">Automode</span>
         </div>
         <div class="admin-content" id="adminPending"></div>
         <div class="admin-content hidden" id="adminAllUsers"></div>
@@ -359,6 +360,7 @@
         <div class="admin-content hidden" id="adminRoadmaps"></div>
         <div class="admin-content hidden" id="adminCourses"></div>
         <div class="admin-content hidden" id="adminMetrics"></div>
+        <div class="admin-content hidden" id="adminAutomode"></div>
     </div>
 
     <div class="modal-overlay hidden" id="settingsModal">
@@ -1580,8 +1582,8 @@ function showAdminDashboard() { document.getElementById('adminDashboardModal').c
 function closeAdminDashboard() { document.getElementById('adminDashboardModal').classList.add('hidden'); }
 function switchAdminTab(tab) {
     currentAdminTab = tab;
-    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', roadmaps: 'adminRoadmaps', courses: 'adminCourses', metrics: 'adminMetrics' };
-    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'roadmaps', 'courses', 'metrics'];
+    const tabMap = { pending: 'adminPending', all: 'adminAllUsers', grid: 'adminGrid', chats: 'adminUserChats', userPrompts: 'adminUserPrompts', prompts: 'adminPrompts', roadmaps: 'adminRoadmaps', courses: 'adminCourses', metrics: 'adminMetrics', automode: 'adminAutomode' };
+    const tabIds = ['pending', 'all', 'grid', 'chats', 'userPrompts', 'prompts', 'roadmaps', 'courses', 'metrics', 'automode'];
     tabIds.forEach(t => {
         const btn = document.getElementById('adminTab' + t.charAt(0).toUpperCase() + t.slice(1));
         const content = document.getElementById(tabMap[t]);
@@ -1599,6 +1601,7 @@ function switchAdminTab(tab) {
     if (tab === 'roadmaps') loadRoadmaps();
     if (tab === 'courses') loadCourses();
     if (tab === 'metrics') loadMetrics();
+    if (tab === 'automode') loadAutomode();
 }
 
 async function loadAdminPending() {
@@ -2242,6 +2245,95 @@ async function loadMetrics() {
         }
         container.innerHTML = html;
     } catch (e) { container.innerHTML = '<p class="error">Failed to load metrics</p>'; }
+}
+
+// ─── Automode Admin ─────────────────────────────────────────────────────────
+
+async function loadAutomode() {
+    const container = document.getElementById('adminAutomode');
+    try {
+        const res = await fetch(`${API_BASE}/api/automode/config`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) {
+            if (res.status === 401) { doLogout(); return; }
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const config = await res.json();
+        
+        const statusColor = config.enabled ? 'var(--accent-teal)' : 'var(--text-tertiary)';
+        const statusText = config.enabled ? 'ON' : 'OFF';
+        
+        let html = `
+            <div style="max-width:600px;">
+                <h3 style="font-size:18px;margin-bottom:16px;">🤖 Automode Router</h3>
+                <div style="border:var(--line-weight) solid var(--border);padding:20px;border-radius:var(--radius);background:white;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                        <div>
+                            <div style="font-size:16px;font-weight:600;">Status</div>
+                            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">When ON, messages are routed by the AI instead of using a fixed model.</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:12px;">
+                            <span style="font-weight:700;color:${statusColor};font-size:14px;">${statusText}</span>
+                            <label class="toggle-switch" style="position:relative;display:inline-block;width:48px;height:26px;cursor:pointer;">
+                                <input type="checkbox" id="automodeToggle" ${config.enabled ? 'checked' : ''} onchange="toggleAutomode(this.checked)" style="opacity:0;width:0;height:0;">
+                                <span style="position:absolute;inset:0;background:${config.enabled ? 'var(--accent-teal)' : 'var(--border)'};border-radius:13px;transition:0.2s;"></span>
+                                <span style="position:absolute;top:3px;left:${config.enabled ? '25px' : '3px'};width:20px;height:20px;background:white;border-radius:50%;transition:0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2);"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div style="border-top:var(--line-weight) solid var(--border);padding-top:16px;">
+                        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;"><strong>Router:</strong> ${escapeHtml(config.router_provider)} / ${escapeHtml(config.router_model)}</div>
+                        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;"><strong>Default role:</strong> ${escapeHtml(config.default_role)}</div>
+                        <div style="font-size:13px;color:var(--text-secondary);"><strong>Models configured:</strong> ${(config.models || []).length}</div>
+                        <div style="font-size:13px;color:var(--text-secondary);"><strong>Roles defined:</strong> ${(config.roles || []).length}</div>
+                    </div>
+                </div>
+                
+                <h4 style="font-size:15px;margin-bottom:12px;">Available Roles</h4>
+                <div style="display:flex;flex-direction:column;gap:8px;">
+        `;
+        
+        (config.roles || []).forEach(r => {
+            html += `
+                <div style="border:var(--line-weight) solid var(--border);padding:12px 16px;border-radius:var(--radius);background:white;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <div style="font-weight:600;font-size:14px;">${escapeHtml(r.name)}</div>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:var(--radius);background:${r.default_sensitivity === 'high' ? 'rgba(184,92,56,0.1)' : 'var(--accent-surface)'};color:${r.default_sensitivity === 'high' ? 'var(--accent-rust)' : 'var(--accent-teal)'};border:var(--line-weight) solid ${r.default_sensitivity === 'high' ? 'var(--accent-rust)' : 'var(--accent-teal)'};">${r.default_sensitivity}</span>
+                    </div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${escapeHtml(r.description)}</div>
+                    <div style="font-size:11px;color:var(--text-tertiary);margin-top:6px;">
+                        ${r.requires_vision ? '👁️ Vision · ' : ''}Lang: ${(r.required_languages || []).join(', ')} · Strengths: ${(r.preferred_strengths || []).join(', ')}
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `</div></div>`;
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = `<p class="error">Failed to load automode config: ${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function toggleAutomode(enabled) {
+    try {
+        const res = await fetch(`${API_BASE}/api/automode/config`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        if (!res.ok) {
+            if (res.status === 401) { doLogout(); return; }
+            throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        alert(`Automode ${data.enabled ? 'enabled' : 'disabled'}`);
+        loadAutomode();
+    } catch (e) {
+        alert('Failed to toggle automode: ' + e.message);
+        loadAutomode();
+    }
 }
 
 // ─── Init ───
